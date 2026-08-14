@@ -1,0 +1,32 @@
+# dsh-requirements 组合文件
+#
+# 这是「需求面板 + 任务队列」的完整 bundle。安装到任意 DeepSeek Harness /
+# Codex 类 harness 时，在宿主组合文件（cordis.yml）里引用本文件即可挂载整套：
+#
+#   - id: requirements-bundle
+#     name: ./dsh-requirements-bundle/cordis.yml
+#
+# 每个条目对应 src/ 下的一个插件（详见 README.md 的架构图）。
+
+# ── 基础设施：依赖宿主 harness 已挂载的 seam ──
+# session / tools / system-prompt / commands 由宿主提供，本 bundle 只消费，不重复注册。
+
+# ── 需求面板：服务定义（Definition） ──
+- id: requirements
+  name: '@comagic/dsh-requirements/service'
+
+# ── 需求面板：存储实现（Store Seam，可替换为 SQLite / 远程后端） ──
+- id: requirements-store
+  name: '@comagic/dsh-requirements/store'
+
+# ── 需求面板：任务队列派发器（FIFO 串行 + 状态流转 + 返工重排队） ──
+- id: requirements-queue
+  name: '@comagic/dsh-requirements/queue'
+
+# ── 需求面板：Agent 工具（提出 / 查询 / 执行完成 / 验收） ──
+- id: tool-requirements
+  name: '@comagic/dsh-requirements/tools'
+
+# ── 需求面板：三段式系统提示词注入 ──
+- id: requirements-prompt
+  name: '@comagic/dsh-requirements/prompt'

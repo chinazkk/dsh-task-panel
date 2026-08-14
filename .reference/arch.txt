@@ -1,0 +1,1660 @@
+ 
+ DeepSeek Harness 架构 + 需求面板三层设计 
+DeepSeek Harness 架构 
+dsh 框架深度解析 + 需求面板设计 
+ 第一部分 · dsh 框架 
+ 总览 
+ 传统方式的痛点 
+ 硬编码架构 
+ 紧耦合 
+ 生命周期地狱 
+ 部署与定制 
+ dsh 解决了什么 
+ 插件模型 
+ ctx 中枢模型 
+ 分层组合 
+ 配置覆盖机制 
+ 插件注册机制 
+ 三种插件形态 
+ cordis.yml 组合文件 
+ 启动流程 
+ 依赖注入与加载 
+ 服务注册 
+ Fiber 状态机 
+ 副作用与自动撤销 
+ 热更新 
+ 运行时生命周期 
+ Turn/Step 流程 
+ 会话日志 
+ 事件系统 
+ 三种事件域 
+ Waterfall vs Serial 
+ Capability Seam 
+ 三角色关系 
+ 替换示例 
+ 扩展点速查 
+ 包结构 
+ 第二部分 · 需求面板 
+ 模型 
+ 三层流水线模型 
+ 需求层 
+ 执行层 
+ 验收层 
+ 返工循环 
+ 上下文保留 
+ 数据 
+ 数据模型 
+ 状态机 
+ 架构 
+ 插件包拆分 
+ 服务设计 
+ 任务队列派发器 
+ 事件设计 
+ 工具设计 
+ 提示词集成 
+ UI 集成 
+ 落地 
+ cordis.yml 组合 
+ 整体架构图 
+ 完整数据流 
+ 实现路线 
+ 第三部分 · 实际实现 
+ 优化点总览 
+ 双队列分离 
+ 非阻塞验收 
+ 需求可编辑 
+ 返工自动重入 
+ 执行队列排序 
+ 修正后的状态机 
+ 修正后的工具集 
+ 仍可优化（未来方向） 
+ Architecture · Requirements Panel 
+DeepSeek Harness 架构与需求面板三层设计 
+第一部分深入解析 dsh 框架架构；第二部分基于 dsh 的 Seam 三角色与事件驱动范式，设计「需求面板」三层流水线；第三部分记录实际实现中的双队列、非阻塞验收、可编辑等架构优化。 
+总览 
+DeepSeek Harness（
+dsh ）是一个由 DeepSeek AI 开发的开源 AI Agent 框架。核心设计原则： 一切皆插件 ——从模型适配器到 Agent 循环本身，每个组件都可通过配置替换。底层由 Cordis 框架驱动。 
+ 关键区分 
+传统框架：核心代码 → 调用 → 插件（插件是被动被调用方）
+ dsh 框架：插件 → 注册到 → 
+ctx （插件是主动贡献方，消费方从 
+ctx 获取能力）
+ 没有调用者，只有参与者。没有特权核心需要 patch。 
+传统方式的痛点 
+在理解 dsh 的架构之前，先看清楚它要替代的"传统方式"有什么问题。以下痛点不是假设——它们是构建 AI Agent 框架时几乎必然遇到的。 
+痛点 1：硬编码架构——核心不可替换 
+传统框架有一个"核心"（core），核心代码调用插件。核心决定了模型怎么请求、工具怎么执行、会话怎么存储。想替换其中任何一个，要么 fork 整个核心，要么等核心作者加一个 hook。 
+传统方式 
+ 核心代码 
+模型请求逻辑写死在核心 → 想换 LLM？改核心代码
+ 工具执行流水线写死在核心 → 想加审批？改核心代码
+ 会话存储格式写死在核心 → 想换 SQLite 为 Postgres？改核心代码 
+核心是 黑盒 ，扩展靠 fork 或 PR，不是靠配置。 
+dsh 方式 
+ 没有核心 
+ctx.llm 是一个 seam → 换 LLM = 注册新 provider
+ctx.tools 是一个 seam → 加审批 = 监听 
+tools/pre-execute 
+ctx.sessions 是一个 seam → 换存储 = 注册新 persistence backend 
+Agent 循环本身（
+ctx.agentLoop ）都是可替换的配置行。 
+痛点 2：紧耦合——插件之间直接 import 
+传统框架的插件通过直接导入彼此的代码来协作。工具插件 
+import 模型适配器，UI 插件 
+import 会话存储。结果是： 换任何一个组件，依赖它的所有插件都要改代码 。 
+ // 传统方式：直接 import → 紧耦合 
+ import { DeepSeekAdapter } from '@core/llm' // 工具直接依赖具体 LLM 实现 
+ import { SessionStore } from '@core/session' // UI 直接依赖具体存储实现 
+ import { ToolRegistry } from '@core/tools' // 循环直接依赖工具注册表 
+ // 想把 DeepSeekAdapter 换成 MyAdapter？ 
+ // → 改这个文件的 import 
+ // → 改所有其他 import 了 DeepSeekAdapter 的文件 
+ // → 祈祷没有循环依赖 
+ // → 祈祷类型兼容 
+ // → 上线后发现有 10 个地方偷偷依赖了 DeepSeekAdapter 的私有方法 
+ 紧耦合的连锁反应 
+直接 import 导致 替换成本随依赖数量线性增长 。一个组件被 20 个插件 import，替换它就要改 20 个文件。实际项目中，这通常意味着"不换"——技术债由此积累。 
+痛点 3：生命周期地狱——手动 cleanup 
+传统框架中，插件注册的事件监听器、定时器、连接池需要手动清理。忘了清理 → 内存泄漏、僵尸监听器、错误在已卸载的插件上触发。 
+ // 传统方式：手动管理生命周期 
+ class MyPlugin {
+ mount () {
+ this .listener = onModelRequest ( this .handle)
+ this .timer = setInterval ( this .tick, 1000)
+ this .conn = createConnection (dbUrl)
+ }
+ unmount () {
+ // 忘了移除 listener? → 僵尸监听器，模型请求时触发已卸载的 handler 
+ offModelRequest ( this .listener)
+ // 忘了 clearInterval? → 定时器永远跑，内存泄漏 
+ clearInterval ( this .timer)
+ // 忘了关闭连接? → 连接池耗尽 
+ this .conn. close ()
+ // 如果有 10 个资源要清理呢? 20 个呢? 
+ // 如果 async cleanup 有顺序依赖呢? 
+ // 如果热更新时旧实例没清理干净就加载新实例呢? 
+ }
+} 
+ 热更新 = 灾难 
+传统框架几乎不支持热更新——因为旧实例的资源没有自动清理机制。热更新意味着卸载旧插件、加载新插件，但如果旧插件忘了清理一个定时器，它会在新插件运行时继续触发，导致 不可预测的状态污染 。大多数框架选择不支持热更新来回避这个问题。 
+痛点 4：部署与定制——一份代码一种部署 
+传统框架的部署形态是固定的。想给不同用户不同的能力集？想在某些部署中关闭某些工具？想在远程沙箱中运行而不是本地？通常需要 fork 代码或维护多个分支。 
+传统方式：fork 定制 
+企业版要关闭 Bash 工具 → fork 代码，注释掉
+ 云端版要用远程沙箱 → fork 代码，改执行逻辑
+ 定制版要换模型 → fork 代码，改模型调用
+ 每个定制一个分支，合并时地狱。 
+dsh 方式：配置定制 
+企业版关闭 Bash → 
+disabled: true 
+ 云端版用远程沙箱 → 注册新 
+ctx.fs + 
+ctx.subprocess 
+ 定制版换模型 → 
+llm.adapter: ./my-adapter 
+ 一份代码，无限部署形态，靠配置区分。 
+痛点汇总 
+痛点 
+传统方式 
+后果 
+dsh 解决方案 
+核心不可替换 
+模型/工具/存储逻辑写死在核心 
+替换靠 fork，扩展靠 PR 
+ctx.agentLoop 本身是配置行，一切皆可替换 
+插件紧耦合 
+插件直接 import 彼此代码 
+替换一个组件，改 N 个文件 
+插件通过 
+ctx 交互，从不直接 import 
+手动生命周期管理 
+手动注册 + 手动 cleanup 
+泄漏、僵尸监听器、热更新不可用 
+注册即副作用，卸载自动 unwind 
+部署形态固定 
+fork 代码或维护多分支 
+合并地狱，版本碎片化 
+Profile + Bundle + Patch 层叠配置 
+扩展点不明确 
+hook 函数散落各处，无统一约定 
+不知道在哪里扩展，容易遗漏 
+三类事件覆盖全部扩展场景 
+依赖管理混乱 
+手动控制加载顺序 
+顺序错误 → 初始化失败 
+inject 声明依赖，框架自动排序 
+dsh 解决了什么 
+上一节列出了痛点。这一节说明 dsh 的每个设计决策如何精确对应这些痛点，以及它们带来的 长远好处 。 
+解决方案 1：ctx 中枢 → 消除紧耦合 
+插件不 import 彼此，而是通过 
+ctx 上的命名服务交互。工具插件不 import LLM 适配器，而是 
+ctx.llm.stream() 。UI 不 import 会话存储，而是 
+ctx.sessions.append() 。 
+ // dsh 方式：通过 ctx 交互，零直接依赖 
+ export const inject = [ 'llm' , 'sessions' ]
+ export function apply (ctx: Context) {
+ // ctx.llm 是接口，不关心是 DeepSeek 还是自定义适配器 
+ const stream = ctx.llm. stream (request)
+ // ctx.sessions 是接口，不关心是 JSONL 还是 SQLite 
+ ctx.sessions. append (sessionId, event)
+} 
+ 长远好处 
+ 替换成本从 O(N) 降到 O(1) 。换一个组件只需注册新 provider，所有消费方零修改。这意味着技术债不再随时间积累——组件可以随时升级，不需要"等到下个大版本一起改"。 
+解决方案 2：可逆注册 → 消除生命周期地狱 
+所有注册（
+ctx.on() 、
+ctx.plugin() 、
+ctx.tools.register() ）都是副作用。Cordis 跟踪每个插件注册的所有副作用，卸载时自动 unwind。开发者只管注册，不管清理。 
+ // dsh 方式：注册即可，不用 cleanup 
+ export function apply (ctx: Context) {
+ ctx. on ( 'agent/pre-step' , handler) // 自动解绑 
+ ctx.tools. register (myTool) // 自动注销 
+ ctx. effect (() => {
+ const timer = setInterval (tick, 1000)
+ return () => clearInterval (timer) // 自动调用 
+ })
+ // 没有 unmount() 方法 — 不需要 
+} 
+ 长远好处 
+ 热更新成为一等公民 。因为副作用自动清理，HMR 可以安全地卸载旧实例、加载新实例。开发者编辑代码保存，旧插件的所有资源自动释放，新插件干净加载。这在传统框架中几乎不可能实现。 
+解决方案 3：inject 依赖 → 消除加载顺序问题 
+插件声明 
+inject = ['llm', 'tools'] ，框架自动等待依赖就绪后再调用 
+apply 。配置文件中的位置无关紧要。依赖消失时自动卸载，恢复时自动重载。 
+ 长远好处 
+ 配置替换可以在运行时进行 。卸载 
+dsh-bash-local 条目，挂载另一个 
+shell provider，所有依赖 
+shell 的插件自动重启到新实现。不需要重启服务，不需要改代码。 
+解决方案 4：层叠配置 → 消除部署碎片化 
+一份代码通过 Profile + Bundle + Patch 产生无限部署形态。企业版、云端版、定制版共享同一套代码，靠配置区分。 
+ # 企业版 cordis.patch.yml — 关闭危险工具 
+- id : bash
+ disabled : true 
+ # 云端版 cordis.patch.yml — 使用远程沙箱 
+- id : remote-sandbox
+ name : './remote-sandbox.ts' 
+ # 定制版 cordis.patch.yml — 换模型 
+ llm :
+ adapter : "./custom-llm-adapter" 
+ # 同一份代码，三种部署，零 fork 
+ 长远好处 
+ 维护成本从 O(部署形态数) 降到 O(1) 。不再为每个客户维护一个分支。所有部署共享同一套代码和测试，配置差异在配置文件中表达，不在代码中。 
+解决方案 5：事件作为唯一扩展点 → 消除扩展点不明确 
+传统框架的 hook 函数散落在代码各处，没有统一约定。dsh 用三类事件覆盖所有扩展场景，每个事件有明确的触发时机、分发模式和类型签名。 
+扩展需求 
+传统方式 
+dsh 方式 
+拦截模型请求 
+找核心代码里的 hook，可能不存在 
+ctx.on('agent/request', waterfall) 
+审批工具执行 
+改工具执行函数，加 if 判断 
+ctx.on('tools/pre-execute', waterfall) 
+记录遥测 
+在核心代码里埋点 
+ctx.on('agent/turn-stopping', serial) 
+注入上下文 
+改提示词组装函数 
+agent.inject() 
+替换文件系统 
+改所有文件操作调用 
+ctx.set('fs', remoteFs) 
+长远好处总结 
+维度 
+传统框架 
+dsh 
+影响 
+组件替换成本 
+O(N) — 改 N 个依赖文件 
+O(1) — 注册新 provider 
+技术债不积累，随时升级 
+热更新 
+几乎不可能 
+一等公民 — 副作用自动清理 
+开发效率高，调试快 
+部署形态 
+每形态一个 fork/分支 
+一份代码 + 配置层叠 
+维护成本不随客户数增长 
+加载顺序 
+手动管理，易错 
+inject 声明，框架自动 
+配置顺序无关，减少初始化 bug 
+扩展点发现 
+散落各处，靠文档和猜测 
+三类事件，有类型签名 
+新开发者上手快，不遗漏 
+生命周期管理 
+手动 cleanup，容易遗漏 
+自动 unwind，无需关心 
+无内存泄漏，无僵尸监听器 
+测试隔离 
+mock 核心，困难 
+替换 provider 即可 mock 
+单元测试不需要启动整个系统 
+生态扩展 
+核心维护者决定 
+任何人写插件，配置挂载 
+社区贡献不需要改核心 
+ 一句话总结 
+传统框架的扩展成本随依赖深度线性增长，dsh 的扩展成本恒定为 O(1)——因为 所有交互通过 ctx 中转，所有注册自动撤销，所有配置可被覆盖 。这不是一个功能，是一个架构范式。 
+插件模型：ctx 中枢 
+上一节从宏观对比了传统框架与 dsh 的差异。从本节开始，深入 dsh 的架构细节——先看插件如何通过 
+ctx 交互，再看插件如何注册和加载，最后看运行时的完整生命周期。 
+所有插件通过 Cordis 的 
+Context （简称 
+ctx ）交互。插件向 
+ctx 注册服务、事件监听器和工具；消费方从 
+ctx 获取这些能力。插件之间从不直接 
+import 。 
+ ctx 
+ Context (Cordis) 
+ 服务注册表 + 事件总线 
+ ctx.llm 
+ ctx.tools 
+ ctx.sessions 
+ ctx.agentLoop 
+ LLM Adapter 
+ ctx.set('llm', ...) 
+ register 
+ Tool Plugin 
+ ctx.tool('name', ...) 
+ register 
+ FS Provider 
+ ctx.set('fs', ...) 
+ Subprocess 
+ ctx.set('subprocess', ...) 
+ Event Listener 
+ ctx.on('agent/*', ...) 
+ listen 
+ agent-loop 
+ ctx.llm.stream() 
+ consume 
+ Bash Tool 
+ ctx.subprocess.spawn() 
+ consume 
+ Session Fork 
+ ctx.sessions.fork() 
+ Web UI 
+ session/event → render 
+ Terminal Tool 
+ ctx.terminals + ctx.fs 
+ Providers（注册方） 
+ Consumers（消费方） 
+ 插件之间无直接依赖，全部通过 ctx 中转 
+ 图 1. ctx 中枢模型 — 左侧插件向 ctx 注册能力（绿色虚线），右侧消费方从 ctx 获取能力（蓝色实线）。插件之间无直接 import。 
+分层组合 
+dsh 的配置不是单一文件，而是多层叠加。每一层可以覆盖下层的任意配置行。 
+ --patch（命令行覆盖） 
+ dsh --patch my-override.yml 
+ ↓ 覆盖 
+ Home 级 cordis.patch.yml 
+ ~/.dsh/cordis.patch.yml — 用户全局自定义 
+ ↓ 覆盖 
+ Profile 的 cordis.patch.yml 
+ profile 目录内的局部覆盖 
+ ↓ 覆盖 
+ Bundles（按 profile 顺序排列） 
+ dsh-base → dsh-web-app / dsh-headless 
+ ↓ 生成 
+ 最终配置树 
+ dsh --dump-config 输出 
+ 图 2. 配置层叠顺序 — 上层覆盖下层。每层可 patch 任意配置行（替换或插入）。最终生成的配置树决定加载哪些插件、使用什么参数。 
+配置覆盖机制 
+系统的每项配置是一个带 ID 的"行"（row）。上层配置通过 
+patch 替换或插入行。这意味着 任何组件都可被精确替换 ： 
+ # 查看实际加载的完整配置树 
+ dsh --profile web --dump-config
+ # 输出示例（每行都是一个可被 patch 的配置项） 
+ llm .adapter = "@deepseek-ai/dsh-llm-deepseek" 
+ llm .model = "deepseek-chat" 
+ tools .registry = ["@deepseek-ai/dsh-tool-bash", ...] 
+ agentLoop .driver = "@deepseek-ai/dsh-agent-loop" 
+ fs .provider = "local" 
+ sandbox .backend = "landlock" 
+ # ~/.dsh/cordis.patch.yml — 替换 LLM 后端 
+ llm :
+ adapter : "./my-custom-adapter" 
+ model : "my-model-v2" 
+ api_key : "$MY_API_KEY" 
+ 关键点 
+agentLoop 本身也是一个配置行。你可以注册一个全新的 
+ctx.agentLoop 实现来替换整个 Agent 循环逻辑——这不是 hack，是设计意图。 
+插件注册机制 
+上一节讲了"为什么"一切皆插件。这一节讲"怎么"——插件从代码到运行的全过程：如何声明、如何被发现、如何加载、如何注册能力、如何被依赖、如何被卸载。 
+三种插件形态 
+Cordis 接受三种插件写法，底层机制相同： 
+ // 1. 函数插件 — 最常见 
+ export function apply (ctx: Context) {
+ ctx. on ( 'agent/pre-step' , handler)
+}
+ // 2. 对象插件 — 带名称和 apply 方法 
+ export const objectPlugin = {
+ name : 'my-plugin' ,
+ apply (ctx: Context) { /* ... */ }
+}
+ // 3. 类插件 — 继承 Service，同时注册一个服务 
+ export class MyService extends Service {
+ constructor (ctx: Context) {
+ super (ctx, 'myService' ) // 注册到 ctx.myService 
+ }
+ doWork () { return 'done' }
+} 
+ 选择原则 
+用函数插件直到你需要暴露一个服务——此时改用类插件（继承 
+Service ）。对象插件用于需要显式 
+name 的场景。 
+cordis.yml：组合文件 
+插件不通过 
+import 挂载，而是通过 
+cordis.yml 声明式组合。
+cordis.yml 是一个插件条目列表，每个条目描述一个要加载的插件： 
+ # cordis.yml — 应用组合文件 
+- id : llm # 稳定标识，用于 HMR diff 
+ name : '@deepseek-ai/dsh-llm-deepseek' # 模块路径或 npm 包名 
+ config : # 传给插件 apply 的配置 
+ model: deepseek-chat
+ api_key: $DEEPSEEK_API_KEY
+- id : tools
+ name : '@deepseek-ai/dsh-tools' 
+- id : my-tool
+ name : './my-tool.ts' # 相对路径也行 
+- id : debug-plugin
+ name : './debug.ts' 
+ disabled : true # 保留条目但不加载 
+- id : isolated-shell
+ name : '@deepseek-ai/dsh-shell-local' 
+ isolate : true # 独立服务实例，不共享 
+字段 
+作用 
+必需 
+name 
+模块路径或 npm 包名——Loader 用它 resolve 插件代码 
+是 
+id 
+条目的稳定标识。HMR 用它 diff 配置变更：无 id 的条目每次读配置都被视为删除+新增 
+强烈建议 
+config 
+传给 
+apply(ctx, config) 的配置对象 
+否 
+disabled 
+true 时不加载，但保留条目。翻回 
+false 即恢复 
+否 
+isolate 
+给该条目独立的服务实例，不与其他条目共享同一 
+ctx key 
+否 
+ 常见陷阱 
+条目在 
+cordis.yml 中的 位置不决定加载顺序 。加载顺序由 
+inject 依赖决定——所有条目并发启动，依赖满足后才进入 ACTIVE。如果插件"什么都不做"，检查它的 
+inject 是否有未被满足的服务。 
+启动流程：从 cordis.yml 到运行时 
+ 1. 启动器创建 root Context 
+ 挂载 Loader 插件 
+ 2. Loader 读取 cordis.yml 
+ 解析每个条目 → resolve 模块路径 
+ 3. 为每个条目创建 Fiber（插件运行时实例） 
+ 检查 inject 依赖 → PENDING 或直接 LOADING 
+ 4. 依赖满足 → 调用 apply(ctx, config) 
+ 插件注册服务 / 事件监听 / 工具 → 全部是可逆副作用 
+ 5. Fiber 进入 ACTIVE 
+ 其他依赖此服务的插件从 PENDING → LOADING 
+ 6. 所有插件 ACTIVE → 应用就绪 
+ agent-loop 开始驱动 Turn/Step 循环 
+ 层叠配置来源 
+ Bundle cordis.yml 
+ Profile patch.yml 
+ Home patch.yml 
+ --patch 覆盖 
+ 图 3. 启动流程 — 启动器创建 root ctx → Loader 读取组合文件 → 为每个条目创建 Fiber → 依赖满足后调用 apply → ACTIVE。右侧虚线框显示 cordis.yml 的层叠来源。 
+依赖注入与加载顺序 
+插件通过 
+inject 数组声明它需要哪些服务。Cordis 持有插件在 PENDING 状态直到所有依赖就绪。 cordis.yml 中的位置不决定加载顺序——依赖关系决定。 
+ // consumer.ts — 声明依赖 'greeter' 和 'tools' 
+ export const name = 'consumer' 
+ export const inject = [ 'greeter' , 'tools' ]
+ export function apply (ctx: Context) {
+ // 进入 apply 时，ctx.greeter 和 ctx.tools 保证已就绪 
+ const result = ctx.greeter. greet ( 'world' )
+ ctx.tools. register (myTool)
+} 
+ # cordis.yml — 顺序无所谓 
+- name : './consumer.ts' # 先列出来也没问题 
+- name : './greeter.ts' # 后列出来也行 
+ # consumer 的 inject=['greeter'] 让它等 greeter ACTIVE 后才加载 
+ # 交换两行顺序，输出完全一样 
+ 依赖是动态跟踪的 
+inject 不是一次性启动检查。如果运行时某个被依赖的服务消失（provider 被卸载或热替换），所有依赖它的插件 自动卸载 ，当服务恢复时 重新加载 。这就是配置替换能工作的原因：卸载 
+dsh-bash-local 条目，挂载另一个 
+shell provider，所有 
+inject: ['shell'] 的插件干净地重启到新实现。 
+ // 可选依赖 — 不用 inject，运行时探测 
+ export function apply (ctx: Context) {
+ const greeter = ctx. get ( 'greeter' ) // 无 provider 时返回 undefined 
+ console . log (greeter?. greet ( 'maybe' ) ?? 'no greeter' )
+} 
+服务注册：Service 类 + 声明合并 
+暴露服务需要两步： 运行时注册 （让 
+ctx.xxx 可用）和 编译时类型声明 （让 TypeScript 认识 
+ctx.xxx ）。 
+ // greeter.ts — 注册一个服务 
+ import { Service, type Context } from '@deepseek-ai/cordis' 
+ // ── 编译时：TypeScript 声明合并 ── 
+ // 向 Context 接口添加 greeter 属性，让 ctx.greeter 有类型 
+ declare module '@deepseek-ai/cordis' {
+ interface Context {
+ greeter: GreeterService 
+ }
+}
+ // ── 运行时：Service 子类 ── 
+ export class GreeterService extends Service {
+ constructor (ctx: Context) {
+ super (ctx, 'greeter' ) // 注册名 → ctx.greeter 
+ }
+ greet (who: string ) { return `Hello, ${who}!` }
+}
+ export const name = 'greeter' 
+ export function apply (ctx: Context) {
+ ctx. plugin (GreeterService) // 挂载 Service 子类 
+} 
+ // 事件声明也一样——声明合并 + emit/on 
+ declare module '@deepseek-ai/cordis' {
+ interface Events {
+ 'stats/report' (name: string , count: number ): void 
+ }
+}
+ // 之后 ctx.emit('stats/report', ...) 和 ctx.on('stats/report', ...) 全部有类型 
+Fiber 状态机 
+每个加载的插件实例拥有一个 Fiber ——运行时句柄，经历以下状态： 
+ PENDING 
+ 等待依赖 
+ → 
+ LOADING 
+ apply 执行中 
+ → 
+ ACTIVE 
+ apply 完成 
+ → 
+ UNLOADING 
+ disposer 执行中 
+ → 
+ DISPOSED 
+ 完全清理 
+ apply 抛异常 → FAILED 
+ 图 4. Fiber 状态机 — PENDING（等依赖）→ LOADING（apply 中）→ ACTIVE → UNLOADING（清理）→ DISPOSED。apply 抛异常进入 FAILED。 
+ 诊断"什么都不做"的插件 
+插件 
+inject 了一个没人提供的服务 → 永远停在 PENDING，不报错、不输出。诊断方法：遍历 
+ctx.registry 检查 Fiber 状态。PENDING 是合法状态——provider 可能稍后才挂载。 
+ // 诊断脚本：检查哪些插件卡在 PENDING 
+ import { FiberState, type Context } from '@deepseek-ai/cordis' 
+ export function apply (ctx: Context) {
+ setTimeout (() => {
+ for ( const runtime of ctx.registry. values ()) {
+ for ( const fiber of runtime.fibers) {
+ if (fiber.state === FiberState.PENDING)
+ console . log ( `${fiber.name} PENDING — 依赖未满足` )
+ }
+ }
+ }, 500)
+} 
+副作用与自动撤销 
+所有通过 Cordis API 注册的内容都是 副作用 ——插件卸载时自动撤销，无需手动 cleanup。这是热插拔的基础。 
+注册 API 
+注册内容 
+卸载时自动撤销 
+ctx.on(event, listener) 
+事件监听器 
+移除监听器 
+ctx.plugin(child) 
+子插件 
+递归 dispose 子插件 
+super(ctx, 'name') 
+服务（Service 类） 
+从 ctx 移除服务 
+ctx.tools.register(...) 
+工具注册 
+注销工具 
+ctx.effect(() => disposer) 
+自定义资源（定时器、连接等） 
+调用 disposer 
+ // 所有注册都是副作用 — 卸载时自动 unwind 
+ export function apply (ctx: Context) {
+ ctx. on ( 'agent/pre-step' , handler) // → unload 时解绑 
+ ctx. plugin (GreeterService) // → unload 时移除服务 
+ ctx.tools. register (myTool) // → unload 时注销工具 
+ // 非 Cordis 管理的资源 → 用 ctx.effect() 包装 
+ ctx. effect (() => {
+ const timer = setInterval (tick, 1000)
+ return () => clearInterval (timer) // disposer 
+ })
+} 
+ ctx.effect() 的用途 
+大多数情况不需要手写 
+ctx.effect() ——内置 API（
+on 、
+plugin 、
+register ）已经是副作用。只在管理 Cordis 不认识的资源（定时器、网络连接、文件 watcher）时才需要。disposer 在卸载时执行，async disposer 并发执行（按注册的逆序开始）。 
+热更新（HMR） 
+因为卸载释放副作用、加载跟随依赖，HMR 可以通过卸载+重载替换运行中的插件。编辑 
+cordis.yml 本身也会被感知——Loader 按 
+id diff 条目，只挂载/卸载/重配置变更的部分。 
+ # cordis.yml — 启用 HMR 
+- id : hmr
+ name : '@deepseek-ai/cordis-plugin-hmr' 
+ config :
+ root: [ '.' ]
+ # 编辑 hello.ts 并保存 → 
+ # 1. 旧实例卸载（所有副作用 unwind） 
+ # 2. 新代码加载 
+ # 3. apply 重新执行 
+ # 4. 依赖此服务的插件自动重启 
+ 为什么条目需要 id 
+没有 
+id 的条目每次读配置都生成新 id，所以任何 
+cordis.yml 编辑都被视为"删除+新增"，即使该条目自身没改也会重新挂载。给条目加 
+id 让 Loader 正确 diff。 
+运行时生命周期 
+前面讲了插件如何注册和加载。这一节讲注册完成后的运行时——当用户发送一条消息，系统内部发生了什么。理解 dsh 运行时需要区分两个核心概念： Step 和 Turn 。 
+概念 
+定义 
+包含 
+ Step 
+一次模型请求 + 其调用的工具执行 
+1 次 LLM 流式请求 + 0~N 次工具调用 
+ Turn 
+零或多个 Step 的完整对话轮次 
+从首次输入认领到不再欠债关闭 
+Turn / Step 完整流程 
+ turn/start 
+ 认领下一步输入 + 队列消息 
+ 组装提示词段落 + 工具 schema 
+ agent/pre-step 
+ waterfall — 可拒绝 | 可重写消息 
+ 拒绝 → 关闭 turn 
+ step/start 
+ 追加 user/message 到日志 
+ deriveMessages() 从日志派生历史 
+ agent/request → llm/stream 
+ waterfall — 可拦截/重写请求 
+ assistant/chunk* → assistant/message 
+ tool/call* → tools/* → tool/result* 
+ pre-execute → execute → post-execute (waterfall) 
+ step/end 
+ 工具需要再请求 
+ 或新输入到达 
+ → 下一个 step 
+ 图 5. Turn/Step 生命周期 — 紫色节点是可拦截的 waterfall 事件，绿色节点是持久会话事件，蓝色是流程控制节点。虚线箭头表示循环和异常路径。 
+会话日志：事件溯源 
+会话日志是系统的 单一真相源 。采用 Event Sourcing 模式：所有状态从不可变的事件流派生。 
+ Session Log 
+ append-only 事件流 
+ user/message 
+ assistant/message 
+ tool/call 
+ tool/result 
+ ... 更多事件 
+ derive 
+ 模型可见历史 
+ deriveMessages() 
+ Fork / Resume 
+ 从事件流分叉/重放 
+ UI 渲染 
+ session/event → render 
+ LLM 请求 
+ ctx.llm.stream() 
+ 模型响应 → 追加新事件到日志 
+ 图 6. 事件溯源循环 — 日志是唯一真相。模型历史、Fork、UI 渲染全部从事件流派生。模型响应写回日志，形成闭环。 
+ 运行时不变式 
+ 模型可见 = 已记录。 任何到达模型请求的内容必须能从会话日志重建。运行时不变式会断言这一点。新增模型可见输入 = 扩展 
+SessionEventMap + 从日志渲染。 
+事件系统 
+运行时生命周期中的 
+agent/pre-step 、
+tools/execute 等节点就是事件。事件是 dsh 的 唯一扩展点 ——插件不通过继承或 hook 函数扩展系统，而是通过监听事件。三类事件覆盖所有扩展场景。 
+三种事件域 
+事件域 
+代表事件 
+持久性 
+用途 
+ Session 
+turn/*, step/*, user/message, assistant/*, tool/* 
+持久（追加到日志） 
+必须在重载后存活的事实。Fork/Resume/Replay 全部从此派生。 
+ Agent 
+agent/pre-step, agent/request, agent/turn-stopping 
+实时（不持久） 
+观察/拦截进行中的工作。携带活跃 Agent 句柄。 
+ Capability 
+fs/*, tools/*, telemetry/* 
+实时（不持久） 
+附加策略和适配器到 seam，不导入循环本身。 
+Waterfall vs Serial 
+Waterfall（瀑布流） 
+ agent/pre-step 
+ agent/request 
+ llm/stream 
+ tools/pre-execute 
+ tools/execute 
+ tools/post-execute 
+监听器 必须调用 
+next() 委托。可重写输入、拒绝请求或短路。适合拦截和转换。 
+Serial（串行） 
+ agent/turn-stopping 
+ 无 
+next() ，监听器顺序执行。适合观察和副作用，不能拦截流程。 
+ // Waterfall 拦截示例：在模型请求前注入系统上下文 
+ctx. on ( 'agent/pre-step' , (event, next) => {
+ if (event.messages.length === 0) {
+ return 'reject' // 拒绝 → 关闭 turn 
+ }
+ const rewritten = injectContext (event.messages)
+ return next ({ ...event, messages: rewritten }) // 重写后委托 
+})
+ // Serial 观察示例：轮次结束时记录遥测 
+ctx. on ( 'agent/turn-stopping' , (event) => {
+ ctx.telemetry. record ({
+ type : 'turn_end' ,
+ steps : event.stepCount,
+ tokens : event.tokenUsage
+ })
+ // 无 next() — 不能阻止轮次结束 
+}) 
+Capability Seam 模式 
+前面两节讲了插件如何通过 
+ctx 注册服务、如何通过事件扩展行为。这一节讲 dsh 可插拔的最后一环： 能力如何被封装为可替换的 Seam 。Seam 是 dsh 实现可插拔的核心机制——每个能力通过 Seam 暴露，包含三个严格分离的角色。 
+三角色关系 
+ Service Definition 
+ 声明接口契约 
+ interface LlmService { 
+ stream(req): AsyncIterable 
+ } 
+ Service Provider 
+ 实现接口 
+ DeepSeek adapter 
+ Exa search provider 
+ Alt Provider 
+ 可替换的实现 
+ my-custom-adapter 
+ remote-sandbox-fs 
+ Consumer 
+ 使用接口（不关心实现） 
+ agent-loop 
+ Bash tool 
+ Web UI 
+ implements 
+ implements 
+ consumed via 
+ swap! 
+ Provider 通过 ctx.set('llm', ...) 注册 
+ Consumer 通过 ctx.llm 消费 
+ 替换 Provider 不需要修改任何 Consumer 代码 
+ 图 7. Seam 三角色 — 定义声明接口，Provider 实现接口，Consumer 消费接口。替换 Provider（虚线箭头）不影响任何 Consumer。 
+替换示例：一行 patch 换掉整个 LLM 后端 
+ // my-adapter.ts — 自定义 LLM 适配器 
+ export const inject = [ 'llm' ] // 声明依赖：需要 ctx.llm slot 
+ export default function myAdapter (ctx: Context) {
+ ctx. set ( 'llm' , {
+ async stream (req: LlmRequest ): AsyncIterable < StreamChunk > {
+ const resp = await fetch ( 'https://my-api.com/chat' , {
+ method : 'POST' , body : JSON . stringify (req)
+ })
+ yield { type : 'text' , text : await resp. text () }
+ }
+ })
+}
+ // cordis.patch.yml — 挂载 
+ llm :
+ adapter : "./my-adapter" 
+ // agent-loop 无感知，它只依赖 ctx.llm 接口 
+ 级联替换 
+文件系统（
+ctx.fs ）和子进程（
+ctx.subprocess ）共享一个执行世界。将它们指向远程沙箱， Bash、PTY、LSP 全部自动迁移 ——因为它们都通过 
+ctx.fs / 
+ctx.subprocess 消费，不直接导入 provider。 
+ // remote-sandbox.ts — 一次替换，三个工具全部迁移 
+ export const inject = [ 'fs' , 'subprocess' , 'sandbox' ]
+ export default function remoteSandbox (ctx: Context) {
+ ctx. set ( 'fs' , createRemoteFs ( 'ssh://sandbox' ))
+ ctx. set ( 'subprocess' , createRemoteSubprocess ())
+ ctx. set ( 'sandbox' , createRemotePolicy ())
+ // Bash tool、Terminal tool、LSP 全部自动走远程 
+} 
+扩展点速查 
+以上从静态结构（ctx 中枢、分层配置）到注册机制（插件形态、依赖注入、副作用）到运行时（Turn/Step、事件、Seam）完整覆盖了 dsh 的架构。以下速查表汇总所有扩展点，供开发者快速定位。 
+ 核心 
+ 能力 
+ UI / 持久化 
+目标 
+机制 
+ctx key 
+添加模型 provider 
+在 ctx.llm 上注册适配器 
+ctx.llm 
+添加模型面向的能力 
+在 ctx.tools 上注册，schema 自动加入提示词 
+ctx.tools 
+给某会话不同能力集 
+组合 agent preset，service 行需 isolate realm 
+agent preset 
+拦截请求 / 工具 / 轮次 
+使用 agent/* 或 tools/* 事件 
+agent/* 
+停止一个轮次 
+使用 agent/turn-stopping 事件 
+agent/turn-stopping 
+注入模型可见上下文 
+调用 agent.inject()，落入下一个准入请求 
+agent.inject() 
+替换整个 Agent 循环 
+注册新的 ctx.agentLoop 实现 
+ctx.agentLoop 
+目标 
+机制 
+ctx key 
+添加 shell 执行 
+注册 ctx.shell 后端 
+ctx.shell 
+添加持久终端 
+注册 ctx.terminals 后端 + dsh-tool-terminal 
+ctx.terminals 
+添加文件系统访问 / 策略 
+注册 ctx.fs provider 或监听 fs/* 事件 
+ctx.fs 
+限制子进程 
+使用 ctx.sandbox 后端 
+ctx.sandbox 
+添加后台任务 
+注册 ctx.jobs 
+ctx.jobs 
+添加 Web 搜索 / 抓取 
+注册 ctx.web provider 
+ctx.web 
+添加子智能体 
+注册 subagent provider 
+subagent 
+添加工作流 
+注册 workflow 引擎（Worker Thread 隔离） 
+workflow 
+添加 LSP 导航 
+注册 LspProvider / Service 
+lsp 
+目标 
+机制 
+ctx key 
+添加 UI / 编辑器集成 
+驱动 ctx.agents 并从 session/event 渲染 
+ctx.agents 
+添加 Web Client Chat 节点 
+注册 ConversationNodeDefinition 
+client 
+添加持久会话状态 
+扩展 SessionEventMap，从日志渲染和回放 
+SessionEventMap 
+生成会话标题 
+注册 ctx.sessionTitle provider 
+ctx.sessionTitle 
+管理同会话目标 
+使用 ctx.goals 
+ctx.goals 
+Fork 活跃会话 
+ctx.sessions.fork(source, boundary?, childSessionId?) 
+ctx.sessions 
+作用域注册到一个 agent 
+使用该 agent 的 agent.ctx 
+agent.ctx 
+Monorepo 包结构 
+deepseek-harness/
+├── apps/ # 应用组装（CLI 入口） 
+├── packages/ 
+│ ├── core/ # 产品 API 主干 
+│ │ ├── scope/ # 作用域注册原语 
+│ │ ├── session/ # 事件溯源会话日志 
+│ │ ├── system-prompt/ # 提示词组装 
+│ │ ├── tools/ # 工具注册表和执行流水线 
+│ │ ├── agent/ # Agent 接口和事件词汇 
+│ │ ├── agent-default-model/
+│ │ └── agent-loop/ # 默认 agent 驱动器 ← 可替换 
+│ ├── llm/ # LLM 适配器 seam ← 可替换 
+│ ├── bundle/ # 分发 bundle (base, web-app, headless) 
+│ ├── boot/ # 启动组合 
+│ ├── subagent/ # 子智能体系统（6+ 子包） 
+│ ├── subprocess/ # 子进程管理 ← 可替换 
+│ ├── terminal/ # 终端（bash 会话）← 可替换 
+│ ├── web/ # Web 搜索/抓取 ← 可替换 
+│ ├── workflow/ # 工作流引擎（Worker Thread 隔离） 
+│ ├── workspace/ # 工作区注册表 
+│ ├── todo/ # Todo 工具 
+│ ├── typert/ # 类型安全远程调用协议 
+│ ├── util/ # 工具库 (atomic-write, timeout, etc.) 
+│ └── test-support/ # 测试基础设施 
+├── vendor/ # 内嵌的 Cordis 框架 (context, events, registry, fiber...) 
+├── python/ # Python SDK 和运行时 
+├── native/landlock-run/ # Linux Landlock 沙箱 
+├── website/ # VitePress 文档站 
+└── examples/ # 可运行示例 
+ 标红 = 通过 ctx 可替换的核心组件 
+ Part 2 · 需求面板三层架构 
+基于第一部分 dsh 框架。核心思想：需求面板不是硬编码业务逻辑，而是 事件驱动的状态机 ——每一层流转由事件触发，任务队列派发器通过监听事件串行派发，任何一层都可被替换或扩展。 
+三层流水线模型 
+需求面板是一个 三阶段流水线 。需求从需求层提出，自动丢入 任务队列 按序执行，到验收层逐项检验。验收不通过则返工重新入队，全部通过则进入验收完成队列。每个需求在整个生命周期中保留完整上下文。用户提需求的方式不变——照常提出，提交后自动排队，无需人工触发。 
+需求层：提出需求 + 思考构成要素 + 生成验收要素 
+需求层负责 定义"做什么"和"怎么算做完" 。用户或 Agent 提出需求后，系统自动思考需求的构成要素，并生成对应的验收要素。 
+需求构成要素（自动拆解） 
+ 标题 — 一句话描述需求
+ 详细描述 — 背景、目标、约束
+ 优先级 — critical / high / medium / low
+ 范围 — 涉及的模块/文件
+ 依赖 — 前置需求 ID
+ 上下文锚点 — 相关会话片段、代码位置 
+验收要素（定义"做完"） 
+ 功能验收 — 核心功能是否实现
+ 测试验收 — 单元/集成测试是否通过
+ 代码验收 — 是否符合代码规范
+ 文档验收 — 是否更新相关文档
+ 性能验收 — 是否满足性能要求
+ 用户确认 — 用户是否签字认可 
+ 需求层产出 
+需求层完成后，产出一个包含 需求构成要素 和 验收要素 的结构化需求，状态为 
+queued ，随即丢入任务队列排队执行。 
+执行层：任务队列按序执行 
+需求提交后直接进入 任务队列 ，队列 worker 按提交顺序串行消费——一次只执行一个，无需人工触发。用户提需求的方式完全不变：照常用 
+propose_requirement 工具，提交后自动排队。执行时每步动作都记录到执行上下文中。 
+ 任务队列机制 
+需求提交时 emit 
+requirement/queued → 队列 worker 监听此事件 → 
+enqueue 入队 → 串行派发给执行 agent（驱动完整 turn 执行）→ 收尾（
+accepted / 
+rework ）后再取下一个。队列空则空闲，来活即动。 
+验收层：对照验收要素逐项检查 
+执行完成后需求进入验收层。Agent 先自检（对照验收要素逐项验证），然后提交用户确认。全部通过进入 验收完成队列 ；任一不通过进入返工。 
+ 验收层产出 
+验收层对每个验收要素给出 通过/失败 判定。全部通过 → 
+accepted （验收完成队列）。任一失败 → 
+rework （返工记录），回到需求列表重新执行。 
+返工循环 
+验收不通过时，系统创建 返工记录 （包含失败原因、涉及的验收项、建议修复方案），需求状态回退到 
+queued ， 重新入队排队 。轮到它时，Agent 看到返工记录后针对性修复，而非从头开始。 
+ 返工 ≠ 从头开始 
+返工时 Agent 能看到 所有历史上下文 ：上轮执行做了什么、验收哪项失败、失败原因是什么。Agent 只需针对失败项修复，不必重做已通过的部分。 
+上下文保留 
+每个需求在整个生命周期中保留 完整上下文链 ，Agent 在任何阶段都能看到完整历史。 
+阶段 
+保留的上下文 
+需求层 
+原始需求描述、拆解后的构成要素、验收要素、创建者、创建时间 
+执行层 
+每步执行动作（代码变更、工具调用、模型请求）、执行日志、中间产物 
+验收层 
+每项验收结果（通过/失败）、失败原因、Agent 自检报告、用户确认记录 
+返工 
+返工次数、每次返工原因、修复方案、修复后的重新验收结果 
+完成 
+完整生命周期摘要、总耗时、返工次数、最终交付物引用 
+数据模型 
+ import { Brand } from '@deepseek-ai/cordis' 
+ export type RequirementId = Brand < string , 'RequirementId' >
+ // ── 需求生命周期阶段 ── 
+ export type RequirementStage =
+ | 'backlog' // 需求队列：待评审，不自动执行（实际新增） 
+ | 'queued' // 执行队列：已丢入，等待 FIFO 派发 
+ | 'executing' // 执行层：子 agent 新会话执行中（同一时刻仅 1 个） 
+ | 'accepting' // 待验收池：执行完进入，可堆积多个 
+ | 'rework' // 返工：自动重入执行队列（MAX_REWORK 上限） 
+ | 'accepted' // 完成：进入验收完成队列 
+ // ── 需求主体 ── 
+ export interface Requirement {
+ id : RequirementId 
+ title : string 
+ description : string 
+ priority : 'critical' | 'high' | 'medium' | 'low' 
+ stage : RequirementStage 
+ // 需求构成要素（需求层自动拆解） 
+ elements : RequirementElement [] // 构成要素列表 
+ scope : string [] // 涉及的模块/文件 
+ dependencies : RequirementId [] // 前置依赖 
+ acceptanceCriteria : AcceptanceItem [] // 验收要素列表 
+ // 上下文锚点 
+ contextAnchors : ContextAnchor [] // 相关会话片段、代码位置 
+ // 生命周期记录（完整上下文） 
+ executions : ExecutionRecord [] // 每次执行（含返工）的完整记录 
+ acceptances : AcceptanceRecord [] // 每次验收的完整记录 
+ reworkCount : number // 返工次数 
+ createdBy : 'user' | 'agent' 
+ createdAt : number 
+ updatedAt : number 
+ version : number // 乐观锁 
+}
+ // ── 需求构成要素 ── 
+ export interface RequirementElement {
+ id : string 
+ category : 'feature' | 'api' | 'ui' | 'test' | 'config' | 'other' 
+ description : string // 要素描述 
+ scope : string [] // 涉及的文件/模块 
+}
+ // ── 验收要素 ── 
+ export interface AcceptanceItem {
+ id : string 
+ category : 'functional' | 'test' | 'code_quality' 
+ | 'documentation' | 'performance' | 'user_confirmation' 
+ description : string // 验收条件描述 
+ autoCheckable : boolean // Agent 能否自动检查 
+}
+ // ── 执行记录（每次执行/返工一条） ── 
+ export interface ExecutionRecord {
+ round : number // 第几轮（1=首次，2=第一次返工...） 
+ startedAt : number 
+ completedAt ?: number 
+ actions : ExecutionAction [] // 每步动作 
+ summary : string // Agent 的执行总结 
+ isRework : boolean // 是否返工 
+ reworkReason ?: string // 返工原因（返工时填写） 
+}
+ export interface ExecutionAction {
+ type : 'code_change' | 'tool_call' | 'file_create' | 'file_edit' | 'test_run' 
+ description : string 
+ toolCallId ?: string // 关联的 tool/call 事件 
+ timestamp : number 
+}
+ // ── 验收记录 ── 
+ export interface AcceptanceRecord {
+ round : number // 对应第几轮执行 
+ items : AcceptanceResult [] // 逐项验收结果 
+ overall : 'passed' | 'failed' 
+ agentSummary : string // Agent 自检报告 
+ userConfirmed ?: boolean // 用户是否确认 
+ failedItems ?: string [] // 失败的验收项 ID 
+ reworkSuggestion ?: string // 建议修复方案 
+ timestamp : number 
+}
+ export interface AcceptanceResult {
+ itemId : string 
+ passed : boolean 
+ detail : string // 验证过程描述 
+}
+ // ── 上下文锚点 ── 
+ export interface ContextAnchor {
+ type : 'session_event' | 'code_location' | 'file_reference' 
+ ref : string // 事件 ID / 文件路径 / 代码位置 
+ description ?: string 
+} 
+状态机 
+ drafting 
+ 需求层·编辑中 
+ 提交 
+ queued 
+ 需求列表 
+ 队列派发 
+ executing 
+ 执行层·执行中 
+ 完成 
+ accepting 
+ 验收层·验收中 
+ 通过 
+ accepted 
+ 验收完成队列 
+ 不通过 
+ rework 
+ 返工记录 
+ 返工重新入队 
+ 蓝=需求层 橙=执行层 黄=验收层 绿=验收完成 红=返工 
+ 图 8. 蓝图状态机 — drafting → queued → executing → accepting → accepted / rework。实际实现新增 
+backlog （需求队列）阶段，并把执行与验收解耦为待验收池，见 Part 3 · 修正后的状态机 。 
+插件包拆分 
+遵循 dsh 的 Seam 三角色分离原则，按三层流水线 + 基础设施拆包。 
+包名 
+角色 
+职责 
+ctx key 
+dsh-requirements 
+ 定义 
+RequirementsService + RequirementsStore 接口 + 类型 + 事件声明 
+ctx.requirements 
+dsh-requirements-local 
+ 实现 
+实现 RequirementsStore 接口（本地 JSONL） 
+ctx.requirementsStore 
+dsh-requirements-queue 
+ 消费 
+任务队列派发器（串行消费 + 状态流转 + 返工重排队） 
+ctx.jobs 
+dsh-tool-requirements 
+ 消费 
+模型面向工具（提出需求/执行/验收/返工） 
+ctx.tools 
+dsh-requirements-prompt 
+ 消费 
+提示词注入（需求列表 + 执行上下文 + 验收要素） 
+ctx.systemPrompt 
+dsh-requirements-ui 
+ 消费 
+Web Client 四列看板渲染 
+client 
+dsh-requirements-commands 
+ 消费 
+用户命令（编辑需求/确认验收/触发返工） 
+ctx.commands 
+服务设计 
+ declare module '@deepseek-ai/cordis' {
+ interface Context {
+ requirements: RequirementsService 
+ requirementsStore: RequirementsStore // 存储 seam（可替换） 
+ }
+ interface Events {
+ 'requirement/created' (req: Requirement ): void 
+ 'requirement/queued' (id: RequirementId ): void // 已提交，进入任务队列 
+ 'requirement/enqueued' (id: RequirementId ): void // 队列 worker 已入队 
+ 'requirement/executing' (id: RequirementId , round: number ): void 
+ 'requirement/accepting' (id: RequirementId ): void 
+ 'requirement/accepted' (id: RequirementId ): void 
+ 'requirement/rework' (id: RequirementId , reason: string ): void 
+ }
+}
+ // ── 存储 Seam：接口契约（Definition）── 
+ // Provider 可实现 JSONL / SQLite / 远程后端，替换时消费方零修改 
+ export interface RequirementsStore {
+ save (req: Requirement ): Promise < void >
+ get (id: RequirementId ): Promise < Requirement >
+ update (id: RequirementId , patch: Partial < Requirement >): Promise < void >
+ list (filter: { stage?: RequirementStage }): Promise < Requirement []>
+ // ── 任务队列（FIFO，持久化，Fork/Resume 保留） ── 
+ enqueue (id: RequirementId ): Promise < void > // 追加到队尾 
+ dequeue (): Promise < RequirementId | null > // 取队首（空则 null） 
+ peek (): Promise < RequirementId | null > // 看队首（不出队） 
+}
+ // ── 服务：业务逻辑（Consumer），持久化全部委托给注入的 Store ── 
+ export class RequirementsService extends Service {
+ constructor (ctx: Context) { super (ctx, 'requirements' ) }
+ private get store (): RequirementsStore { return this .ctx.requirementsStore }
+ // ── 需求层 ── 
+ async create (input: RequirementInput ): Promise < Requirement > {
+ // 自动拆解需求构成要素 + 生成验收要素 
+ const elements = await this . decomposeElements (input)
+ const acceptanceCriteria = await this . generateAcceptanceCriteria (input, elements)
+ const req = { ...input, elements, acceptanceCriteria, stage: 'drafting' }
+ await this . store . save (req)
+ this .ctx. emit ( 'requirement/created' , req)
+ return req
+ }
+ async submit (id: RequirementId ): Promise < void > {
+ await this . store . update (id, { stage: 'queued' })
+ this .ctx. emit ( 'requirement/queued' , id) // → 队列 worker 入队派发 
+ }
+ // ── 执行层 ── 
+ async startExecution (id: RequirementId ): Promise < void > {
+ const req = await this . store . get (id)
+ const round = req.reworkCount + 1
+ req.executions. push ({ round, startedAt: Date.now(), actions: [], isRework: round > 1 })
+ req.stage = 'executing' 
+ await this . store . save (req)
+ this .ctx. emit ( 'requirement/executing' , id, round)
+ }
+ async recordAction (id: RequirementId , action: ExecutionAction ): Promise < void > {
+ const req = await this . store . get (id)
+ const exec = req.executions[req.executions.length - 1]
+ exec.actions. push (action) // 保留执行上下文 
+ await this . store . save (req)
+ }
+ async completeExecution (id: RequirementId , summary: string ): Promise < void > {
+ const req = await this . store . get (id)
+ const exec = req.executions[req.executions.length - 1]
+ exec.completedAt = Date. now ()
+ exec.summary = summary
+ req.stage = 'accepting' 
+ await this . store . save (req)
+ this .ctx. emit ( 'requirement/accepting' , id) // → 触发验收层 
+ }
+ // ── 验收层 ── 
+ async submitAcceptance (id: RequirementId , record: AcceptanceRecord ): Promise < void > {
+ const req = await this . store . get (id)
+ req.acceptances. push (record)
+ if (record.overall === 'passed' ) {
+ req.stage = 'accepted' 
+ await this . store . save (req)
+ this .ctx. emit ( 'requirement/accepted' , id) // → 进入验收完成队列 
+ } else {
+ req.reworkCount++
+ req.stage = 'rework' 
+ await this . store . save (req)
+ this .ctx. emit ( 'requirement/rework' , id, record.reworkSuggestion ?? '' )
+ // → 队列 worker 监听 rework 事件 → 重新入队（回队尾） 
+ }
+ }
+ // ── 查询 ── 
+ async get (id: RequirementId ): Promise < Requirement > { return this . store . get (id) }
+ async update (id: RequirementId , patch: Partial < Requirement >): Promise < void > { return this . store . update (id, patch) }
+ async list (filter: { stage?: RequirementStage }): Promise < Requirement []> { return this . store . list (filter) }
+ // ── 任务队列原语（透传 store） ── 
+ async enqueue (id: RequirementId ): Promise < void > { return this . store . enqueue (id) }
+ async dequeue (): Promise < RequirementId | null > { return this . store . dequeue () }
+ async peek (): Promise < RequirementId | null > { return this . store . peek () }
+ async getFullContext (id: RequirementId ): Promise < RequirementContext > {
+ // 返回完整生命周期上下文（需求要素 + 所有执行 + 所有验收 + 返工历史） 
+ }
+} 
+任务队列派发器 
+dsh-requirements-queue 是任务队列的"胶水"插件。蓝图里它监听 
+queued 事件自动入队派发；实际实现拆为 需求队列(backlog) + 执行队列(execQueue) 双层，并把 执行与验收解耦 ，详见 Part 3 。下面是蓝图版单队列实现。 
+ export const inject = [ 'requirements' , 'agents' ]
+ export function apply (ctx: Context) {
+ let busy = false // 是否已有需求在执行（串行） 
+ // ── 需求提交 → 入队 ── 
+ // 用户提需求方式不变：propose_requirement → submit → queued 
+ ctx. on ( 'requirement/queued' , (id) => {
+ ctx.requirements. enqueue (id) // 追加到队尾 
+ ctx. emit ( 'requirement/enqueued' , id)
+ pump () // 尝试派发 
+ })
+ // ── 队列串行派发：一次只执行一个 ── 
+ async function pump () {
+ if (busy) return // 有需求在跑 → 等它收尾 
+ const id = await ctx.requirements. dequeue () // 取队首 
+ if (!id) return // 队列空 → 空闲 
+ busy = true 
+ await ctx.requirements. startExecution (id) // → executing 
+ // 驱动 agent 完整执行一个 turn（后台，无需人工触发） 
+ // 语义 = 向 agent 输入队列提交一条消息，让它认领并开始新 turn 
+ const req = await ctx.requirements. get (id)
+ await ctx.agents. submit (
+ `请执行需求 #${id}「${req.title}」：\n` +
+ `先 list_requirements 查看构成要素与验收要素，逐个完成，\n` +
+ `每步 recordAction 记录执行上下文，\n` +
+ `完成后 complete_execution 提交验收` 
+ )
+ }
+ // ── 收尾释放队列，派发下一个 ── 
+ // 验收通过 → 直接派发下一个 
+ ctx. on ( 'requirement/accepted' , () => { busy = false ; pump () })
+ // 验收失败 → 返工重新入队（回队尾），再派发下一个 
+ ctx. on ( 'requirement/rework' , async (id) => {
+ await ctx.requirements. enqueue (id)
+ busy = false 
+ pump ()
+ })
+} 
+事件设计 
+每个阶段流转都会 emit 一个 
+requirement/* 领域事件。这些是 实时事件 ——不写入 Session 日志，只用于通知 UI 和 Agent。需求的 持久化 由 
+RequirementsStore 负责（状态、执行记录、验收结果、返工历史），与 dsh 的会话事件（
+turn/* 、
+assistant/message 等）职责分离。 
+事件 
+触发时机 
+实时消费方 
+requirement/created 
+需求层创建 
+UI 刷新 
+requirement/queued 
+需求层提交，进入任务队列 
+UI 刷新 + 队列 worker 入队并派发 
+requirement/enqueued 
+队列 worker 追加到队尾 
+UI 刷新（队列顺序变化） 
+requirement/executing 
+执行层开始 
+UI 刷新 
+requirement/accepting 
+执行层完成，进入验收 
+UI 刷新 
+requirement/accepted 
+验收通过，进入完成队列 
+UI 刷新 + 队列 worker 释放，派发下一个 
+requirement/rework 
+验收不通过，返工 
+UI 刷新 + 队列 worker 重新入队 
+工具设计 
+蓝图设计 4 个工具；实际实现扩充为 7 个 （新增 
+edit_requirement / 
+dispatch_requirement / 
+get_requirement ），覆盖双队列 + 完整生命周期。详见 Part 3 · 修正后的工具集 。 
+工具 
+阶段 
+用途 
+propose_requirement 
+ 需求层 
+提出需求 → 需求队列（不自动执行），自动拆解构成要素 + 生成验收要素 
+edit_requirement 
+ 需求层 
+编辑标题/描述/优先级/范围/命令（实际新增） 
+dispatch_requirement 
+ 派发 
+需求队列 → 执行队列（实际新增） 
+list_requirements 
+ 全部 
+按阶段查询需求列表（backlog/queued/executing/accepting/accepted） 
+get_requirement 
+ 全部 
+查看单个需求完整上下文（实际新增） 
+complete_execution 
+ 执行层 
+标记执行完成 → 待验收池（附执行总结） 
+submit_acceptance 
+ 验收层 
+提交验收结果（逐项通过/失败），通过→完成队列，失败→自动重入执行队列返工 
+ // 验收工具 — 核心返工逻辑 
+ctx.tools. register ( defineTool ({
+ name : 'submit_acceptance' ,
+ description : '提交需求验收结果。逐项检查验收要素，全部通过则进入验收完成队列，任一失败则重新入队。' ,
+ parameters : {
+ requirementId : { type : 'string' , required : true },
+ results : {
+ type : 'array' , required : true ,
+ items : {
+ type : 'object' ,
+ properties : {
+ itemId : { type : 'string' },
+ passed : { type : 'boolean' },
+ detail : { type : 'string' , description : '验证过程描述' }
+ }
+ }
+ },
+ summary : { type : 'string' , description : 'Agent 验收总结' },
+ reworkSuggestion : { type : 'string' , description : '失败时的修复建议' }
+ },
+ async execute (args) {
+ const allPassed = args.results. every (r => r.passed)
+ await ctx.requirements. submitAcceptance (args.requirementId, {
+ round : ( await ctx.requirements. get (args.requirementId)).reworkCount + 1,
+ items : args.results,
+ overall : allPassed ? 'passed' : 'failed' ,
+ agentSummary : args.summary,
+ failedItems : args.results. filter (r => !r.passed). map (r => r.itemId),
+ reworkSuggestion : args.reworkSuggestion
+ })
+ return allPassed
+ ? `需求验收通过，已进入验收完成队列。` 
+ : `需求验收未通过，已重新入队。失败项: ${args.results.filter(r => !r.passed).map(r => r.itemId).join(', ')}` 
+ }
+})) 
+提示词集成 
+系统提示词在每次 
+agent/pre-step 时注入三层流水线的实时状态。Agent 在任何阶段都能看到"需求列表有什么、在执行什么、待验收什么、已完成什么"。 
+ 三段式提示词 
+ 第一段 （queue-status）：四列状态概览（任务队列 / 执行中 / 待验收 / 验收完成）
+ 第二段 （execution-context）：当前正在执行的需求的完整上下文（构成要素 + 验收要素 + 返工历史）
+ 第三段 （acceptance-guide）：当前待验收的需求的验收要素清单 + 上次执行总结 
+UI 集成：五列看板 + 任务窗口 
+蓝图原为四列看板；实际落地为 五列看板 （需求队列 backlog → 执行队列 queued → 执行中 executing → 待验收池 accepting → 验收完成 accepted），并在左侧 workspace 单开 任务窗口 （新增需求、丢执行、编辑、拖拽排序、置顶、撤回、逐个验收）。详见 Part 3 。下图为蓝图四列示意。 
+ 需求列表 (queued) 
+ 用户登录功能 
+ [critical] 要素:4 验收:4 
+ #001 
+ 数据导出 API 
+ [high] 要素:3 验收:3 
+ #003 
+ 任务队列按序派发 
+ → Agent 执行 
+ 执行中 (executing) 
+ 权限管理模块 
+ [high] 第1轮 · 3/5 步 
+ #002 
+ 搜索优化 
+ [medium] 第2轮 · 返工1次 
+ #004 
+ 执行完成 
+ → 提交验收 
+ 待验收 (accepting) 
+ 日志清理 
+ 验收要素: 2 项 
+ #005 
+ 通过 ↓ 
+ 不通过 ↗ 返工 
+ 验收完成 (accepted) 
+ API 重构 
+ ✓ 0 返工 · 2 天 
+ #006 
+ 缓存层 
+ ✓ 2 返工 · 5 天 
+ #007 
+ 验收完成队列 
+ 返工重新入队 
+ 图 9. 蓝图四列看板 UI — 需求列表（蓝）→ 执行中（橙）→ 待验收（黄）→ 验收完成（绿）。实际为五列看板 + 任务窗口（见 Part 3）。 
+cordis.yml 组合 
+ # dsh-requirements-bundle/cordis.yml 
+ # ── 基础设施依赖 ── 
+- id : session
+ name : '@deepseek-ai/dsh-session' 
+- id : tools
+ name : '@deepseek-ai/dsh-tools' 
+- id : system-prompt
+ name : '@deepseek-ai/dsh-system-prompt' 
+- id : commands
+ name : '@deepseek-ai/dsh-commands' 
+ # ── 需求面板：服务定义 ── 
+- id : requirements
+ name : '@deepseek-ai/dsh-requirements' 
+ # ── 需求面板：存储 ── 
+- id : requirements-store
+ name : '@deepseek-ai/dsh-requirements-local' 
+ # ── 需求面板：任务队列派发器（串行派发 + 状态流转 + 返工重排队） ── 
+- id : requirements-queue
+ name : '@deepseek-ai/dsh-requirements-queue' 
+ # ── 需求面板：Agent 工具 ── 
+- id : tool-requirements
+ name : '@deepseek-ai/dsh-tool-requirements' 
+ # ── 需求面板：提示词注入 ── 
+- id : requirements-prompt
+ name : '@deepseek-ai/dsh-requirements-prompt' 
+ # ── 需求面板：UI ── 
+- id : requirements-ui
+ name : '@deepseek-ai/dsh-requirements-ui' 
+ # ── 需求面板：用户命令 ── 
+- id : requirements-commands
+ name : '@deepseek-ai/dsh-requirements-commands' 
+整体架构图 
+ 用户 / Agent 
+ 需求层 
+ propose_requirement 工具 
+ 拆解构成要素 + 生成验收要素 
+ submit → emit queued 
+ 执行层 
+ 队列 worker 监听 queued → 入队派发 
+ Agent 自动执行 + 记录上下文 
+ complete → emit accepting 
+ 验收层 
+ submit_acceptance 工具 
+ 通过 → 完成 
+ 不通过 → 返工 
+ emit accepted / rework 
+ 返工：重新入队再执行 
+ RequirementsService (ctx.requirements) 
+ CRUD + 状态流转 + 上下文保留 + 事件 emit 
+ 委托 
+ Store 
+ JSONL/SQLite 
+ 实时事件（广播 UI + Agent Loop） 
+ RequirementsStore 
+ Fork/Resume 保留 
+ Web UI 
+ 四列看板实时刷新 
+ Agent Loop 
+ submit + system-prompt 
+ 完整上下文：需求构成要素 + 每轮执行记录 + 每次验收结果 + 返工历史 → 全程可追溯 
+ 蓝=需求层 橙=执行层 绿=验收层/存储 紫=Agent 红虚线=返工 
+ 图 10. 整体架构 — 三层流水线 + 核心服务 + 存储 + 实时事件 + 上下文保留。返工循环由队列 worker 自动驱动。 
+完整数据流 
+场景（蓝图）：从提出需求到验收通过（含一次返工） 
+ 注 
+以下为蓝图「单队列 + 阻塞式 busy」流程；实际已演化为「需求队列 →（丢执行）→ 执行队列 → 待验收池（非阻塞）」双队列流程，并支持需求编辑、拖拽排序/置顶，见 Part 3 。 
+用户提出需求 
+用户说"帮我做一个用户登录功能" → Agent 调用 
+propose_requirement 工具 → 系统自动思考需求构成要素（登录页、后端 API、鉴权中间件、测试用例）+ 生成 4 项验收要素 → 状态 
+drafting 
+提交到任务队列 
+Agent 确认要素完整 → 调用 
+submit → 状态 
+queued → emit 
+requirement/queued 事件（提需求方式不变，无需人工触发） 
+任务队列按序派发 
+队列 worker 监听 
+queued 事件 → 
+enqueue 追加到队尾 → 
+pump 串行派发：
+dequeue 取队首 + 
+agents.submit 驱动 Agent 开始执行，无需人工触发 
+Agent 执行 
+状态 
+executing → Agent 逐个完成子任务（写代码、跑测试）→ 每步通过 
+recordAction 保留执行上下文 → 完成后调用 
+complete_execution 
+进入验收 
+状态 
+accepting → Agent 逐项自检验收要素 → 调用 
+submit_acceptance 提交验收结果 
+验收不通过 → 返工 
+测试用例未通过 → 
+overall: failed → 状态 
+rework → 
+reworkCount = 1 → 队列 worker 将需求重新 
+enqueue 到队尾，等待再次派发 
+Agent 针对性修复 
+Agent 看到返工原因（"测试用例 test_login.test_password 验证失败"）+ 上次执行记录 → 针对性修复 → 重新 
+complete_execution 
+再次验收通过 
+所有验收要素通过 → 
+overall: passed → 状态 
+accepted → 进入验收完成队列 → UI 刷新为绿色 
+完整上下文保留 
+需求记录包含：原始构成要素 + 验收要素 + 2 轮执行记录 + 2 次验收结果 + 1 次返工原因 → Fork 会话时完整保留 → 可随时回溯 
+实现路线 
+阶段 
+包 
+交付物 
+ P0 
+dsh-requirements 
+数据模型 + RequirementsService 接口 + SessionEventMap 扩展 
+ P0 
+dsh-requirements-local 
+JSONL 存储 Provider + 状态流转实现 
+ P1 
+dsh-requirements-queue 
+任务队列派发器（入队 → 串行派发 → 返工重入队）+ 提示词段落 
+ P1 
+dsh-tool-requirements 
+4 个工具（propose / list / complete_execution / submit_acceptance） 
+ P2 
+dsh-requirements-prompt 
+三段式提示词（状态概览 + 执行上下文 + 验收要素） 
+ P2 
+dsh-requirements-ui 
+四列看板 + 需求卡片 + 验收表单 
+ P2 
+dsh-requirements-commands 
+用户命令（编辑需求 / 确认验收 / 触发返工） 
+ P3 
+dsh-requirements-bundle 
+Bundle cordis.yml + Profile 模板 + 文档 
+ 实现状态 
+P0–P3 已全部落地为可运行面板（
+plugins/dsh-requirements-bundle/ ）。蓝图与实际实现的差异见 Part 3 · 优化总览 。 
+ 设计原则 
+需求面板的三层流水线不是硬编码的业务逻辑——它是 事件驱动的状态机 。每一层的流转由事件触发，任务队列派发器通过监听事件串行派发。这意味着任何一层都可以被替换或扩展：加一个"设计评审层"只需注册新事件 + 新状态 + 新队列监听器，不改现有代码。 
+ Part 3 · 实际实现与架构优化 
+第二部分是「设计蓝图」。把蓝图落成可运行的需求面板后，暴露出蓝图里几处会导致体验问题的架构假设。本节记录实际面板与蓝图的差异、每一处「值得优化」的点，以及优化后的最终形态。 
+架构优化总览 
+蓝图落成可运行面板后，逐一定位并优化了 6 处： 
+# 
+蓝图的问题 
+实际优化 
+收益 
+1 
+「提交即入队即执行」：需求一旦提交就自动派发 
+ 双队列分离 ：需求队列(backlog) 与 执行队列(execQueue) 
+需求可沉淀、评审、按需派发 
+2 
+队列 worker 的 busy 要等验收通过/返工才释放 
+ 执行与验收解耦 ：执行完即入待验收池并释放队列 
+待审核不再阻塞后续执行 
+3 
+需求定义后不可修改 
+ 需求可编辑 ：标题/描述/优先级/范围/命令 
+返工与修正形成闭环 
+4 
+返工重新入队不可控，可能死循环 
+ 返工自动重入 + 上限保护 （MAX_REWORK=5） 
+自动修复 + 防死循环 
+5 
+执行队列顺序不可调 
+ 拖拽排序 / 置顶 / 撤回 
+优先级动态调整 
+6 
+四列看板、阻塞式状态机 
+ 五列看板 + 非阻塞状态机 
+双队列与待验收池可视化 
+优化 1：双队列分离（需求队列 ↔ 执行队列） 
+蓝图把「提出需求」和「执行」压成一条线：
+submit → queued → 队列 worker 自动派发 。这导致需求一旦提出就立即执行，没有沉淀和评审窗口。实际实现拆成两个队列，语义清晰： 
+ // 需求队列：不自动执行，可编辑 
+ const backlog = [] // stage: 'backlog' 
+ // 执行队列：丢入后 FIFO 串行执行 
+ const execQueue = [] // stage: 'queued' → 'executing' 
+ createRequirement (input) // → backlog（不 pump） 
+ dispatchToExec (id) // backlog → execQueue → pump() 
+ recallFromExec (id) // execQueue → backlog（撤回） 
+ 收益 
+需求可先在需求队列里编辑、评审，再决定何时丢到执行队列；执行队列只关心「按什么顺序跑」。 
+优化 2：执行与验收解耦（待验收池） 
+蓝图里队列 worker 的 
+busy 标志要等 
+accepted /
+rework 才释放，导致一个需求停在「待验收」时整个执行队列被卡住。实际实现把「执行完成」作为释放点：任务执行完即进入待验收池，立即取下一个执行。 
+ executeTask (req, exec). then (summary => {
+ finalizeExecution (id, summary) // → accepting（待验收池） 
+ busy = false // 立即释放队列 
+ pump () // 取下一个 
+}) 
+ 收益 
+同一时刻只有 1 个任务在「执行」，但可以有 N 个任务堆积在「待验收池」；验收通过/返工完全异步，不再阻塞流水。 
+优化 3：需求可编辑 
+蓝图的需求创建后不可改。实际实现新增 
+edit_requirement 工具 + 
+panel.edit RPC，可改标题/描述/优先级/范围/命令；配合返工，形成「返工 → 修改 → 重新丢执行」的修正闭环。 
+优化 4：返工自动重入 + 上限保护 
+验收不通过（或执行异常）时，需求 
+reworkCount++ 后自动重入执行队列队尾；连续返工超过 
+MAX_REWORK=5 则退回需求队列，避免死循环。 
+优化 5：执行队列拖拽排序 / 置顶 / 撤回 
+执行队列支持拖拽排序与置顶，让用户在派发前动态调整优先级；撤回把任务退回需求队列。 
+优化后的状态机 
+状态 
+所属队列 
+流转动作 
+backlog 
+需求队列 
+新建/撤回/返工上限后进入；
+丢执行 → queued 
+queued 
+执行队列 
+等待 FIFO 派发；可置顶/拖拽/撤回 
+executing 
+— 
+子 agent 新会话执行中（同一时刻仅 1 个） 
+accepting 
+待验收池 
+执行完进入；可堆积多个，逐个通过/返工 
+accepted 
+验收完成 
+验收通过 
+ 与蓝图的关键差异 
+蓝图是「单队列 + 阻塞式 busy」，实际是「双队列 + 执行/验收解耦」。前者把验收延迟计入执行排程，后者把验收从执行排程中剥离出来。 
+优化后的工具集（7 个） 
+工具 
+阶段 
+用途 
+propose_requirement 
+ 需求层 
+提出需求 → 需求队列（不自动执行） 
+edit_requirement 
+ 需求层 
+编辑标题/描述/优先级/范围/命令 
+dispatch_requirement 
+ 派发 
+需求队列 → 执行队列 
+list_requirements 
+ 全部 
+按阶段查询需求列表 
+get_requirement 
+ 全部 
+查看完整上下文 
+complete_execution 
+ 执行层 
+标记执行完成 → 待验收池 
+submit_acceptance 
+ 验收层 
+通过 → 完成队列；失败 → 自动重入执行队列 
+ 执行 Seam 
+蓝图用 
+agents.submit 驱动 agent turn；实际动态插件用 
+subagents.start 在 新会话 派发子 agent 执行（provider 择优 fork/spawn），执行结果回填为本轮执行总结。 
+仍可优化（未来方向） 
+前 6 处是把蓝图落成可用面板后 必须修 的架构问题；以下是架构上 仍值得继续优化 的方向，供后续迭代参考： 
+方向 
+现状 
+优化建议 
+持久化 
+动态插件为内存态，重启即清空 
+接入 JSONL/SQLite store（bundle 已含 
+store.ts ），Fork/Resume 保留队列与历史 
+实时性 
+Client 1s 轮询 + seq 竞态防护 
+改为事件订阅推送，降低延迟与开销 
+优先级调度 
+FIFO + 手动拖拽/置顶 
+按 priority 自动排序，拖拽作为人工覆盖 
+执行并发度 
+严格串行（同时仅 1 个 executing） 
+可配置并发 N，按 capacity 派发 
+验收自动化 
+autoCheckable 项仍靠人工审查 
+autoCheckable 项自动校验（跑测试），仅 user_confirmation 走人工 
+可观测性 
+子 agent 仅回填 stopReason 
+超时、取消、重试退避、执行 trace 关联 
+ DeepSeek Harness (
+dsh ) · GitHub · MIT License
+ 技术栈：TypeScript · Cordis · pnpm workspace · tsdown · Vitest · Landlock

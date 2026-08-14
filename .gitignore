@@ -4,3 +4,6 @@ dist/
 *.log
 .env
 .env.local
+
+# 运行时数据（不纳入版本管理）
+.dsh-task-panel/

@@ -1,0 +1,35 @@
+{
+  "name": "@comagic/dsh-requirements",
+  "version": "2.1.0",
+  "description": "需求面板 + 需求队列/执行队列分离的任务队列，任务在新会话子 agent 中执行。可安装到任意 DeepSeek Harness / Codex 类 harness。",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./service": "./dist/service.js",
+    "./store": "./dist/store.js",
+    "./queue": "./dist/queue.js",
+    "./tools": "./dist/tools.js",
+    "./prompt": "./dist/prompt.js"
+  },
+  "files": ["src", "dist", "cordis.yml", "README.md"],
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "export": "bash export.sh"
+  },
+  "keywords": ["deepseek-harness", "dsh", "requirements", "kanban", "task-queue", "cordis", "codex", "subagent"],
+  "engines": {
+    "node": ">=18"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh": ">=1.0.0",
+    "cordis": ">=0.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "tsdown": "^0.3.0"
+  }
+}
