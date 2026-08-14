@@ -19,6 +19,13 @@ return {
     const timerService = ctx.get('timer')
 
     const MAX_REWORK = 5
+    // 执行器不应使用面板管理工具（防止误调 complete_execution 等绕过队列元数据捕获）
+    // 注意：deny 名单必须是子 agent 作用域内「已知的全局工具」，否则 tools.restrict 校验会抛错
+    const EXEC_DENY_TOOLS = [
+      'propose_requirement', 'edit_requirement', 'delete_requirement',
+      'dispatch_requirement', 'list_requirements', 'get_requirement',
+      'complete_execution', 'submit_acceptance',
+    ]
     // 持久化诊断（通过 list_requirements 输出，便于定位写入失败原因）
     let persistDiag = 'ok'
 
@@ -263,7 +270,7 @@ return {
         completedAt: null,
         summary: '',
         isRework: round > 1,
-        reworkReason: req.reworkReason || undefined,
+        reworkReason: req.reworkReason || null,
         sessionId: null,
         parentSessionId: null,
         stopReason: null,
@@ -334,7 +341,9 @@ return {
 
     // ── 队列派发器：串行子 session 执行 ───────────────
     let busy = false
-    const runningRuns = new Set()
+    const runningRuns = new Map() // requirementId -> SubagentRun（可定向暂停/停止）
+    const userStopped = new Set() // 被用户暂停/停止的需求 id
+    const stopTargets = new Map() // 需求 id -> 'paused' | 'backlog'
 
     function resolveParent() {
       try { const init = agents.currentInitiator(); if (init) return init } catch (e) { /* noop */ }
@@ -351,9 +360,52 @@ return {
       } catch (e) { return 'fork' }
     }
 
-    function buildPrompt(req) {
+    // ── 任务面板自有的专用执行目录（不在别的项目下跑子任务） ──
+    async function resolvePanelExecDir() {
+      try {
+        const parent = resolveParent()
+        const sessionCwd = parent && parent.session && parent.session.header
+          ? parent.session.header.cwd : null
+        if (!sessionCwd || typeof sessionCwd !== 'string') return null
+        // 面板自己的项目目录：<会话工作区>/dsh-task-panel
+        const candidate = sessionCwd + '/dsh-task-panel'
+        if (fs) {
+          try {
+            const t = await fs.resolve(candidate)
+            const info = await fs.stat(t)
+            if (info) return candidate
+          } catch (e) { /* 目录不存在则回退 */ }
+        }
+        return candidate
+      } catch (e) { return null }
+    }
+
+    // 用户暂停/停止执行中的任务：中断子 agent，目标 paused（可恢复）或 backlog（退回需求队列）
+    function stopExecution(id, target) {
+      const run = runningRuns.get(id)
+      if (!run) return false
+      userStopped.add(id)
+      stopTargets.set(id, target === 'paused' ? 'paused' : 'backlog')
+      try { void run.dispose().catch(() => {}) } catch (e) { /* noop */ }
+      return true
+    }
+
+    // 恢复已暂停的任务 → 重入执行队列
+    function resumeExecution(id) {
+      const req = requirements[id]
+      if (!req || req.stage !== 'paused') return false
+      req.stage = 'queued'
+      if (execQueue.indexOf(id) < 0) execQueue.push(id)
+      req.updatedAt = Date.now()
+      persistState()
+      void pump()
+      return true
+    }
+
+    function buildPrompt(req, execDir) {
       const lines = [
         '请执行需求 #' + req.id + '「' + req.title + '」。',
+        execDir ? '工作目录（请在此目录内完成所有文件操作）：' + execDir : '',
         req.description ? '描述：' + req.description : '',
         '优先级：' + req.priority,
         req.scope && req.scope.length ? '涉及范围：' + req.scope.join(', ') : '',
@@ -417,7 +469,10 @@ return {
       persistState()
       try {
         startExecution(id)
+        // 使用当前会话根 agent 作为执行器父级（裸创建的面板 agent 缺少完整装配，会导致执行器起不来/报 {{model}} 错）
+        // 通过提示词把工作目录钉死在任务面板自己的项目目录，避免在别的项目下执行
         const parent = resolveParent()
+        const execDir = await resolvePanelExecDir()
         if (!parent || !subagents) {
           await completeExecution(id, '未挂载子 agent 执行能力，已跳过真实执行（状态流转到待验收）')
           busy = false
@@ -441,27 +496,47 @@ return {
         const provider = resolveProvider()
         const run = await subagents.start(provider, {
           label: '执行 ' + id + ' ' + req.title,
-          prompt: [{ type: 'text', text: buildPrompt(req) }],
+          prompt: [{ type: 'text', text: buildPrompt(req, execDir) }],
           parent: parent,
           signal: signal,
+          toolFilter: { deny: EXEC_DENY_TOOLS },
         })
-        runningRuns.add(run)
+        runningRuns.set(id, run)
         let result
         try {
           result = await run.result
         } finally {
-          runningRuns.delete(run)
+          runningRuns.delete(id)
         }
-        const summary = extractText(result && result.output) || '执行完成（stopReason=' + (result && result.stopReason) + '）'
-        const sessionId = run && run.id ? run.id : null
-        const transcript = await captureTranscript(sessionId)
-        try { if (run && typeof run.dispose === 'function') await run.dispose() } catch (e) { /* noop */ }
-        await completeExecution(id, summary, {
-          sessionId: sessionId,
-          parentSessionId: parent && parent.session ? parent.session.id : null,
-          stopReason: result && result.stopReason,
-          transcript: transcript,
-        })
+        // 用户暂停/停止：不进入待验收，按目标状态流转
+        if (userStopped.has(id)) {
+          userStopped.delete(id)
+          const target = stopTargets.get(id) || 'backlog'
+          stopTargets.delete(id)
+          const exec = req.executions[req.executions.length - 1]
+          if (exec) {
+            exec.completedAt = Date.now()
+            exec.sessionId = run && run.id ? run.id : null
+            exec.parentSessionId = parent && parent.session ? parent.session.id : null
+            exec.summary = target === 'paused' ? '已暂停：用户中断执行，等待恢复' : '已停止：用户终止执行'
+            exec.stopReason = 'user-stopped'
+          }
+          req.stage = target
+          if (target === 'backlog' && backlog.indexOf(id) < 0) backlog.push(id)
+          req.updatedAt = Date.now()
+          persistState()
+        } else {
+          const summary = extractText(result && result.output) || '执行完成（stopReason=' + (result && result.stopReason) + '）'
+          const sessionId = run && run.id ? run.id : null
+          const transcript = await captureTranscript(sessionId)
+          try { if (run && typeof run.dispose === 'function') await run.dispose() } catch (e) { /* noop */ }
+          await completeExecution(id, summary, {
+            sessionId: sessionId,
+            parentSessionId: parent && parent.session ? parent.session.id : null,
+            stopReason: result && result.stopReason,
+            transcript: transcript,
+          })
+        }
       } catch (err) {
         await completeExecution(id, '执行异常：' + (err && err.message ? err.message : String(err)))
       } finally {
@@ -470,11 +545,28 @@ return {
       }
     }
 
-    // ── 对外只读视图（供 RPC / 工具 / 提示词使用） ──
+    // ── 对外只读视图（供 RPC / 工具 / 提示词使用；清洗所有字段避免 undefined 泄漏） ──
+    function sanitizeExec(ex) {
+      if (!ex) return null
+      return {
+        round: typeof ex.round === 'number' ? ex.round : 0,
+        startedAt: typeof ex.startedAt === 'number' ? ex.startedAt : 0,
+        completedAt: typeof ex.completedAt === 'number' ? ex.completedAt : null,
+        summary: typeof ex.summary === 'string' ? ex.summary : '',
+        isRework: !!ex.isRework,
+        reworkReason: ex.reworkReason || null,
+        sessionId: ex.sessionId || null,
+        parentSessionId: ex.parentSessionId || null,
+        stopReason: ex.stopReason || null,
+        transcript: Array.isArray(ex.transcript) ? ex.transcript : [],
+      }
+    }
+
     function view(id) {
       const req = requirements[id]
       if (!req) return null
-      const lastExec = req.executions[req.executions.length - 1] || null
+      const executions = (req.executions || []).map(sanitizeExec).filter(Boolean)
+      const lastExec = executions[executions.length - 1] || null
       return {
         id: req.id,
         title: req.title,
@@ -485,19 +577,27 @@ return {
         scope: req.scope,
         dependencies: req.dependencies,
         acceptanceCriteria: req.acceptanceCriteria,
-        executions: req.executions,
-        acceptances: req.acceptances,
-        reworkCount: req.reworkCount,
-        reworkReason: req.reworkReason,
+        executions: executions,
+        acceptances: (req.acceptances || []).map((a) => ({
+          round: typeof a.round === 'number' ? a.round : 0,
+          overall: a.overall || 'failed',
+          agentSummary: typeof a.agentSummary === 'string' ? a.agentSummary : '',
+          userConfirmed: !!a.userConfirmed,
+          failedItems: Array.isArray(a.failedItems) ? a.failedItems : [],
+          reworkSuggestion: a.reworkSuggestion || '',
+          timestamp: typeof a.timestamp === 'number' ? a.timestamp : 0,
+        })),
+        reworkCount: req.reworkCount || 0,
+        reworkReason: req.reworkReason || null,
         createdBy: req.createdBy,
         createdAt: req.createdAt,
         updatedAt: req.updatedAt,
         version: req.version,
-        command: req.command,
+        command: req.command || null,
         // 验收产物：一句话摘要（最新一轮执行总结）
         deliverable: lastExec ? lastExec.summary : '',
-        lastSessionId: lastExec ? (lastExec.sessionId || null) : null,
-        lastParentSessionId: lastExec ? (lastExec.parentSessionId || null) : null,
+        lastSessionId: lastExec ? lastExec.sessionId : null,
+        lastParentSessionId: lastExec ? lastExec.parentSessionId : null,
       }
     }
 
@@ -590,6 +690,18 @@ return {
         userConfirmed: true,
       })
       return view(a.id)
+    })
+    handle('pause', async (a) => {
+      stopExecution(a.id, 'paused')
+      return view(a.id)
+    })
+    handle('stop', async (a) => {
+      stopExecution(a.id, 'backlog')
+      return view(a.id)
+    })
+    handle('resume', async (a) => {
+      resumeExecution(a.id)
+      return stateView()
     })
 
     // ── Agent 工具（8 个） ─────────────────────────────
@@ -701,7 +813,7 @@ return {
 
     registerTool(defineTool({
       name: 'list_requirements',
-      description: '按阶段查询需求列表（backlog/queued/executing/accepting/accepted，不传则全部）。',
+      description: '按阶段查询需求列表（backlog/queued/executing/paused/accepting/accepted，不传则全部）。',
       parameters: {
         type: 'object',
         properties: { stage: { type: 'string', description: '可选，过滤阶段' } },
@@ -810,6 +922,7 @@ return {
             '执行队列(queued): ' + byStage('queued').length,
             ...byStage('queued').slice(0, 8).map(line),
             '执行中(executing): ' + byStage('executing').length,
+            '已暂停(paused): ' + byStage('paused').length,
             '待验收(accepting): ' + byStage('accepting').length,
             '验收完成(accepted): ' + byStage('accepted').length,
           ]
@@ -843,7 +956,7 @@ return {
 
     // ── 停止时清理：取消在途子 agent ──
     ctx.effect(() => () => {
-      for (const run of runningRuns) {
+      for (const run of runningRuns.values()) {
         try { run.dispose() } catch (e) { /* noop */ }
       }
       runningRuns.clear()

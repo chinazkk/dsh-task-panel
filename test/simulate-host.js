@@ -29,10 +29,12 @@ const mockSessionQuery = {
 
 let runSeq = 0
 const pendingRuns = [] // 手动控制子 agent 完成时机
+const startedReqs = []  // 记录 subagents.start 收到的请求（parent/prompt）
 const mockSubagents = {
   list: () => ['fork', 'spawn'],
-  start: async () => {
+  start: async (provider, request) => {
     runSeq++
+    startedReqs.push(request)
     const id = 'sess-mock-' + runSeq
     let resolveResult
     const result = new Promise((res) => { resolveResult = res })
@@ -46,8 +48,13 @@ const mockSubagents = {
 
 const mockAgents = {
   currentInitiator: () => null,
-  roots: () => [{ id: 'root-agent' }],
-  list: () => [{ id: 'root-agent' }],
+  roots: () => [{ id: 'root-agent', session: { id: 'root-session', header: { cwd: '/workspace' } } }],
+  list: () => [{ id: 'root-agent', session: { id: 'root-session', header: { cwd: '/workspace' } } }],
+  // 面板专用 agent：独立 session + 独立 cwd
+  create: async (opts) => ({
+    agent: { id: 'panel-agent-' + opts.sessionId, session: { id: opts.sessionId, header: { cwd: opts.meta.cwd } } },
+    dispose: async () => {},
+  }),
 }
 
 const listeners = {}
@@ -174,8 +181,58 @@ async function main() {
   console.log('[11] remove →', JSON.stringify(rm), '| 现存需求 =', st.requirements.map((x) => x.id).join(','))
   assert(rm.removed === true && st.requirements.every((x) => x.id !== c.id), '删除生效')
 
-  // 12. list 工具快照（tools 注册无 schema 校验，此处直接看注册数）
-  console.log('\n✅ 全部断言通过：状态机 + 双队列 + 子 session 派发 + 验收/返工 全流程正常')
+  // 12. 执行器父级为当前会话根 agent，提示词钉死面板工作目录（不在别的项目下执行）
+  const f = await handlers.create({ title: '工作目录验证', description: '验证执行器工作目录钉死在 dsh-task-panel' })
+  await handlers.dispatch({ id: f.id })
+  await sleep(30)
+  const fReq = startedReqs[startedReqs.length - 1]
+  console.log('[12] 执行器 parent =', fReq.parent.id, '| prompt 含工作目录 =', /dsh-task-panel/.test(fReq.prompt[0].text))
+  assert(fReq.parent && String(fReq.parent.id).length > 0, '执行器应有父 agent')
+  assert(/工作目录/.test(fReq.prompt[0].text) && /dsh-task-panel/.test(fReq.prompt[0].text), 'prompt 应指明面板专用工作目录')
+  pendingRuns.shift()() // F 完成
+  await sleep(80)
+  await handlers.remove({ id: f.id })
+
+  // 13. 暂停：执行中 pause → 中断 → 已暂停（可恢复）
+  const g = await handlers.create({ title: '暂停测试' })
+  await handlers.dispatch({ id: g.id })
+  await sleep(30)
+  let gv = await handlers.get({ id: g.id })
+  assert(gv.stage === 'executing', 'G 应处于执行中')
+  await handlers.pause({ id: g.id })   // 用户暂停 → dispose 在途 run
+  pendingRuns.shift()()                 // 被中断的 run 结算
+  await sleep(80)
+  gv = await handlers.get({ id: g.id })
+  console.log('[13] pause → stage =', gv.stage, '| 产物 =', gv.deliverable)
+  assert(gv.stage === 'paused', '暂停后应进入 paused')
+  assert(/暂停/.test(gv.deliverable), '执行记录应标记为用户暂停')
+
+  // 14. 恢复：paused → queued → 自动重执行
+  await handlers.resume({ id: g.id })
+  await sleep(30)
+  gv = await handlers.get({ id: g.id })
+  console.log('[14] resume → stage =', gv.stage, '| 执行轮次 =', gv.executions.length)
+  assert(['queued', 'executing'].includes(gv.stage), '恢复后应重入执行队列')
+  assert(gv.executions.length === 2, '恢复执行应新增一轮')
+  pendingRuns.shift()() // G 第 2 轮完成
+  await sleep(80)
+  gv = await handlers.get({ id: g.id })
+  assert(gv.stage === 'accepting', '恢复执行完成后进入待验收')
+
+  // 15. 停止：执行中 stop → 中断 → 退回需求队列
+  const h = await handlers.create({ title: '停止测试' })
+  await handlers.dispatch({ id: h.id })
+  await sleep(30)
+  await handlers.stop({ id: h.id })
+  pendingRuns.shift()() // 被停止的 run 结算
+  await sleep(80)
+  const hv = await handlers.get({ id: h.id })
+  console.log('[15] stop → stage =', hv.stage, '| 产物 =', hv.deliverable)
+  assert(hv.stage === 'backlog', '停止后应退回需求队列')
+  assert(/停止/.test(hv.deliverable), '执行记录应标记为用户停止')
+
+  // 16. list 工具快照
+  console.log('\n✅ 全部断言通过：状态机 + 双队列 + 子 session 派发 + 专用面板 session + 暂停/恢复/停止 全流程正常')
   console.log('注册工具列表:', registeredTools.join(', '))
 }
 

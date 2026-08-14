@@ -34,7 +34,7 @@ return {
       .dtp-btn.danger:hover { filter: brightness(1.12); }
       .dtp-btn.ghost { background: transparent; }
       .dtp-btn.small { padding: 3px 10px; font-size: 11px; border-radius: 7px; }
-      .dtp-board { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(5, minmax(200px, 1fr)); gap: 12px; padding: 14px 18px; overflow: auto; }
+      .dtp-board { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(6, minmax(170px, 1fr)); gap: 12px; padding: 14px 18px; overflow: auto; }
       .dtp-col { background: color-mix(in srgb, var(--dsw-alias-bg-layer-1, #171a22) 45%, transparent); border: 1px solid var(--dsw-alias-border-l1, #232735); border-radius: 12px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
       .dtp-col-head { padding: 11px 12px 9px; display: flex; align-items: center; gap: 8px; }
       .dtp-dot { width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 8px currentColor; flex: 0 0 auto; }
@@ -132,8 +132,9 @@ return {
         { stage: 'backlog', title: '需求队列', color: '#3b82f6', count: byStage('backlog').length },
         { stage: 'queued', title: '执行队列', color: '#8b5cf6', count: byStage('queued').length },
         { stage: 'executing', title: '执行中', color: '#f59e0b', count: byStage('executing').length },
+        { stage: 'paused', title: '已暂停', color: '#64748b', count: byStage('paused').length },
         { stage: 'accepting', title: '待验收', color: '#10b981', count: byStage('accepting').length },
-        { stage: 'accepted', title: '验收完成', color: '#64748b', count: byStage('accepted').length },
+        { stage: 'accepted', title: '验收完成', color: '#34d399', count: byStage('accepted').length },
       ]
 
       const doCall = (method, args) => {
@@ -186,6 +187,9 @@ return {
                         onTop: () => doCall('top', { id: r.id }),
                         onAccept: () => doCall('accept', { id: r.id }),
                         onRework: () => setReworkReq({ id: r.id, title: r.title }),
+                        onPause: () => doCall('pause', { id: r.id }),
+                        onStop: () => doCall('stop', { id: r.id }),
+                        onResume: () => doCall('resume', { id: r.id }),
                         onConv: () => viewConversation(r),
                       }),
                     ),
@@ -215,7 +219,7 @@ return {
 
     // ── 需求卡片 ──
     function Card(props) {
-      const { req, stage, onEdit, onDelete, onDispatch, onRecall, onTop, onAccept, onRework, onConv } = props
+      const { req, stage, onEdit, onDelete, onDispatch, onRecall, onTop, onAccept, onRework, onPause, onStop, onResume, onConv } = props
       const [confirmDel, setConfirmDel] = React.useState(false)
       React.useEffect(() => {
         if (!confirmDel) return
@@ -240,7 +244,14 @@ return {
         )
       } else if (stage === 'executing') {
         actions = h('div', { className: 'dtp-actions' },
-          h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-state-warn-primary, #fbbf24)' } }, h('span', { className: 'dtp-spin' }), '子 agent 执行中…'),
+          h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-state-warn-primary, #fbbf24)', flexBasis: '100%' } }, h('span', { className: 'dtp-spin' }), '子 agent 执行中…'),
+          h('button', { className: 'dtp-btn small', onClick: onPause }, '⏸ 暂停'),
+          h('button', { className: 'dtp-btn small danger', onClick: onStop }, '⏹ 停止'),
+        )
+      } else if (stage === 'paused') {
+        actions = h('div', { className: 'dtp-actions' },
+          h('button', { className: 'dtp-btn small primary', onClick: onResume }, '▶ 恢复'),
+          h('button', { className: 'dtp-btn small danger', onClick: () => { if (confirmDel) { setConfirmDel(false); onDelete() } else setConfirmDel(true) } }, confirmDel ? '确认删除?' : '删除'),
         )
       } else if (stage === 'accepting') {
         actions = h('div', { className: 'dtp-actions' },
