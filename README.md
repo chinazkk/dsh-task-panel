@@ -44,14 +44,14 @@
 | 文件 | 平台 | 职责 |
 | --- | --- | --- |
 | `src/host.js` | Host | 数据模型 + 状态机 + 双队列调度 + 子 session 派发 + 8 个 Agent 工具 + Client RPC + 持久化 |
-| `src/client.js` | Client | 五列看板 + 需求表单 + 验收面板（产物/对话/返工）+ sidebar 入口 |
+| `src/client.js` | Client | 五列看板 + 需求表单 + 验收面板（产物/对话/返工）；入口为会话视图标签页「任务面板」 |
 
 ## 安装（动态插件）
 
 本插件作为 DSH **动态 Cordis 插件**交付：通过 `cordis_define` / `cordis_run` 加载 Host + Client 两半。
 
 - Host 依赖注入：`subagents`、`agents`（可选：`sessionQuery`、`fs`、`sandboxPolicy`、`systemPrompt`、`timer`）
-- Client 依赖注入：`timer`；使用槽位 `sidebar.footer.action`（入口开关）、`shell.overlay`（看板）
+- Client 依赖注入：`timer`；入口为会话视图标签页 `conversation.view`（与「对话 / 轨迹」同级）
 - 沙箱适配：Host 沙箱无 `AbortController`，从 `agent/pre-step` / 工具 `exec.signal` 捕获 `AbortSignal` 构造器，以 `AbortSignal.any([])` 生成子 agent 信号。
 
 ## Agent 工具（8 个）

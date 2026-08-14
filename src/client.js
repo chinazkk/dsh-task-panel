@@ -4,7 +4,7 @@
 //   · 新增 / 编辑 / 删除需求
 //   · 丢执行 / 置顶 / 撤回
 //   · 验收：一句话产物 + 点击查看 agent 完整对话 + 通过/返工反馈
-// 通过 sidebar 底部按钮开关，面板渲染在 shell.overlay。
+// 入口：与「对话 / 轨迹」同级的会话视图标签页（conversation.view）。
 // ─────────────────────────────────────────────────────────────
 
 return {
@@ -15,9 +15,8 @@ return {
     const h = React.createElement
 
     styles.insert(`
-      .dtp-root { position: fixed; inset: 0; z-index: 9999; pointer-events: auto; display: flex; }
-      .dtp-panel { flex: 1; margin: 12px; display: flex; flex-direction: column; background: var(--color-bg-card, #1e1e2e); border: 1px solid var(--color-border, #444); border-radius: 12px; box-shadow: 0 8px 40px rgba(0,0,0,.45); overflow: hidden; }
-      .dtp-header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--color-border, #444); background: color-mix(in srgb, var(--color-bg-card, #1e1e2e) 92%, #000); }
+      .dtp-root { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--color-bg-1, #181825); }
+      .dtp-header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--color-border, #444); flex: 0 0 auto; }
       .dtp-header h1 { font-size: 15px; margin: 0; font-weight: 600; flex: 1; }
       .dtp-btn { background: var(--color-bg-2, #2a2a3a); color: var(--color-text, #eee); border: 1px solid var(--color-border, #444); border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
       .dtp-btn:hover { background: var(--color-bg-3, #33334a); }
@@ -25,8 +24,8 @@ return {
       .dtp-btn.danger { background: #dc2626; border-color: #dc2626; color: #fff; }
       .dtp-btn.ok { background: #10b981; border-color: #10b981; color: #fff; }
       .dtp-btn.small { padding: 2px 8px; font-size: 11px; }
-      .dtp-board { flex: 1; display: grid; grid-template-columns: repeat(5, minmax(190px, 1fr)); gap: 10px; padding: 12px; overflow: auto; }
-      .dtp-col { background: var(--color-bg-2, #23233a); border-radius: 10px; border: 1px solid var(--color-border, #333); display: flex; flex-direction: column; min-height: 200px; max-height: 100%; }
+      .dtp-board { flex: 1; display: grid; grid-template-columns: repeat(5, minmax(190px, 1fr)); gap: 10px; padding: 12px; overflow: auto; min-height: 0; }
+      .dtp-col { background: var(--color-bg-2, #23233a); border-radius: 10px; border: 1px solid var(--color-border, #333); display: flex; flex-direction: column; min-height: 200px; }
       .dtp-col-head { padding: 8px 10px; font-size: 12px; font-weight: 700; border-bottom: 1px solid var(--color-border, #333); display: flex; justify-content: space-between; align-items: center; }
       .dtp-col-body { padding: 8px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 8px; }
       .dtp-card { background: var(--color-bg-card, #1e1e2e); border: 1px solid var(--color-border, #3a3a4a); border-radius: 8px; padding: 8px 10px; font-size: 12px; }
@@ -38,7 +37,7 @@ return {
       .dtp-actions { display: flex; flex-wrap: wrap; gap: 4px; }
       .dtp-spin { display: inline-block; width: 10px; height: 10px; border: 2px solid #f59e0b; border-top-color: transparent; border-radius: 50%; animation: dtp-spin 1s linear infinite; vertical-align: middle; }
       @keyframes dtp-spin { to { transform: rotate(360deg); } }
-      .dtp-modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 10000; pointer-events: auto; }
+      .dtp-modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 10000; }
       .dtp-modal { background: var(--color-bg-card, #1e1e2e); border: 1px solid var(--color-border, #444); border-radius: 12px; padding: 16px; width: 520px; max-width: 92vw; max-height: 84vh; overflow: auto; }
       .dtp-modal h2 { font-size: 14px; margin: 0 0 12px; }
       .dtp-field { margin-bottom: 10px; }
@@ -52,24 +51,8 @@ return {
       .dtp-msg.tool { background: rgba(100,116,139,.15); border-left: 3px solid #64748b; color: var(--color-text-2, #aaa); font-size: 11px; }
       .dtp-msg .who { font-weight: 700; display: block; margin-bottom: 2px; }
       .dtp-empty { color: var(--color-text-2, #777); font-size: 11px; text-align: center; padding: 12px 0; }
-      .dtp-toast { position: fixed; bottom: 24px; right: 24px; z-index: 10001; background: #111; color: #eee; border: 1px solid #444; border-radius: 8px; padding: 8px 14px; font-size: 12px; pointer-events: auto; }
+      .dtp-toast { position: fixed; bottom: 24px; right: 24px; z-index: 10001; background: #111; color: #eee; border: 1px solid #444; border-radius: 8px; padding: 8px 14px; font-size: 12px; }
     `)
-
-    // ── 面板开关（sidebar 按钮 <-> overlay 共享） ──
-    const openStore = { open: true, listeners: [] }
-    function setOpen(v) {
-      openStore.open = !!v
-      for (const l of openStore.listeners) l()
-    }
-    function useOpen() {
-      const [open, setO] = React.useState(openStore.open)
-      React.useEffect(() => {
-        const l = () => setO(openStore.open)
-        openStore.listeners.push(l)
-        return () => { openStore.listeners = openStore.listeners.filter((x) => x !== l) }
-      }, [])
-      return [open, setOpen]
-    }
 
     // ── 数据轮询 ──
     function usePanelData() {
@@ -85,20 +68,13 @@ return {
       return [data, refresh]
     }
 
-    function fmtTime(ts) {
-      if (!ts) return ''
-      const d = new Date(ts)
-      return d.getMonth() + 1 + '-' + d.getDate() + ' ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0')
-    }
-
-    // ── 主干组件 ──
-    function TaskPanel() {
+    // ── 主干组件（渲染在会话视图标签页内） ──
+    function TaskPanel(props) {
       const [data, refresh] = usePanelData()
       const [formReq, setFormReq] = React.useState(null)   // null | {mode:'create'} | {mode:'edit', id}
       const [reworkReq, setReworkReq] = React.useState(null) // null | {id,title}
       const [convReq, setConvReq] = React.useState(null)    // null | {id,title,sessionId}
       const [toast, setToast] = React.useState(null)
-      const [, setOpenNow] = useOpen()
 
       React.useEffect(() => {
         if (!toast) return
@@ -121,40 +97,37 @@ return {
       }
 
       return h('div', { className: 'dtp-root' },
-        h('div', { className: 'dtp-panel' },
-          h('div', { className: 'dtp-header' },
-            h('h1', null, '任务面板 · 需求面板'),
-            h('span', { style: { fontSize: 11, color: '#888' } },
-              (data ? data.requirements.length : 0) + ' 条需求 · 队列自动在子 session 执行'),
-            h('button', { className: 'dtp-btn primary', onClick: () => setFormReq({ mode: 'create' }) }, '＋ 新建需求'),
-            h('button', { className: 'dtp-btn', onClick: () => setOpen(false) }, '收起'),
-          ),
-          h('div', { className: 'dtp-board' },
-            columns.map((col) =>
-              h('div', { className: 'dtp-col', key: col.stage, style: { borderTop: '3px solid ' + col.color } },
-                h('div', { className: 'dtp-col-head' },
-                  h('span', null, col.title),
-                  h('span', { style: { color: '#888' } }, String(col.count)),
-                ),
-                h('div', { className: 'dtp-col-body' },
-                  byStage(col.stage).length === 0
-                    ? h('div', { className: 'dtp-empty' }, '— 空 —')
-                    : byStage(col.stage).map((r) =>
-                        h(Card, {
-                          key: r.id,
-                          req: r,
-                          stage: col.stage,
-                          onEdit: () => setFormReq({ mode: 'edit', id: r.id }),
-                          onDelete: () => doCall('remove', { id: r.id }),
-                          onDispatch: () => doCall('dispatch', { id: r.id }),
-                          onRecall: () => doCall('recall', { id: r.id }),
-                          onTop: () => doCall('top', { id: r.id }),
-                          onAccept: () => doCall('accept', { id: r.id }),
-                          onRework: () => setReworkReq({ id: r.id, title: r.title }),
-                          onConv: () => setConvReq({ id: r.id, title: r.title, sessionId: r.lastSessionId }),
-                        }),
-                      ),
-                ),
+        h('div', { className: 'dtp-header' },
+          h('h1', null, '任务面板 · 需求面板'),
+          h('span', { style: { fontSize: 11, color: '#888' } },
+            (data ? data.requirements.length : 0) + ' 条需求 · 队列自动在子 session 执行'),
+          h('button', { className: 'dtp-btn primary', onClick: () => setFormReq({ mode: 'create' }) }, '＋ 新建需求'),
+        ),
+        h('div', { className: 'dtp-board' },
+          columns.map((col) =>
+            h('div', { className: 'dtp-col', key: col.stage, style: { borderTop: '3px solid ' + col.color } },
+              h('div', { className: 'dtp-col-head' },
+                h('span', null, col.title),
+                h('span', { style: { color: '#888' } }, String(col.count)),
+              ),
+              h('div', { className: 'dtp-col-body' },
+                byStage(col.stage).length === 0
+                  ? h('div', { className: 'dtp-empty' }, '— 空 —')
+                  : byStage(col.stage).map((r) =>
+                      h(Card, {
+                        key: r.id,
+                        req: r,
+                        stage: col.stage,
+                        onEdit: () => setFormReq({ mode: 'edit', id: r.id }),
+                        onDelete: () => doCall('remove', { id: r.id }),
+                        onDispatch: () => doCall('dispatch', { id: r.id }),
+                        onRecall: () => doCall('recall', { id: r.id }),
+                        onTop: () => doCall('top', { id: r.id }),
+                        onAccept: () => doCall('accept', { id: r.id }),
+                        onRework: () => setReworkReq({ id: r.id, title: r.title }),
+                        onConv: () => setConvReq({ id: r.id, title: r.title, sessionId: r.lastSessionId }),
+                      }),
+                    ),
               ),
             ),
           ),
@@ -376,32 +349,10 @@ return {
       )
     }
 
-    // ── 注册 UI ──
-    slots.inject('sidebar.footer.action', () => slots.register(
-      { name: 'sidebar.footer.action', id: 'dsh-task-panel', label: '任务面板', order: 10 },
-      (props) => {
-        const [open] = useOpen()
-        const label = props && props.wide ? (open ? '任务面板 ✓' : '任务面板') : '面板'
-        return h('button', {
-          className: 'dtp-sidebar-btn',
-          title: '任务面板',
-          onClick: () => setOpen(!openStore.open),
-          style: {
-            display: 'flex', alignItems: 'center', gap: 6, width: '100%', boxSizing: 'border-box',
-            background: 'transparent', color: 'var(--color-text, #ddd)', border: 'none', padding: '8px 10px',
-            cursor: 'pointer', fontSize: 12, borderRadius: 6,
-          },
-        }, h('span', { style: { fontSize: 14 } }, '▦'), label)
-      },
-    ))
-
-    slots.inject('shell.overlay', () => slots.register(
-      { name: 'shell.overlay', id: 'dsh-task-panel', label: '任务面板', order: 100 },
-      () => {
-        const [open] = useOpen()
-        if (!open) return null
-        return h(TaskPanel)
-      },
+    // ── 注册：会话视图标签页（与「对话 / 轨迹」同级） ──
+    slots.inject('conversation.view', () => slots.register(
+      { name: 'conversation.view', id: 'dsh-task-panel', label: '任务面板', order: 20 },
+      (props) => h(TaskPanel, props),
     ))
   },
 }
