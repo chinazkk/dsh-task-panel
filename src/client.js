@@ -23,16 +23,17 @@ return {
       .dtp-logo { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 17px; color: #fff; background: linear-gradient(135deg, var(--dsw-alias-brand-primary, #3b82f6), #8b5cf6); box-shadow: 0 3px 10px color-mix(in srgb, var(--dsw-alias-brand-primary, #3b82f6) 40%, transparent); flex: 0 0 auto; }
       .dtp-title h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: .2px; color: var(--dsw-alias-label-primary, #ececf1); }
       .dtp-title .sub { font-size: 11px; color: var(--dsw-alias-label-secondary, #8b8f9c); margin-top: 2px; }
-      .dtp-btn { border-radius: 8px; padding: 6px 13px; font-size: 12px; font-weight: 550; border: 1px solid var(--dsw-alias-border-l1, #2c3140); background: var(--dsw-alias-bg-layer-2, #20242f); color: var(--dsw-alias-label-primary, #ececf1); cursor: pointer; transition: background .15s, border-color .15s, transform .1s, box-shadow .15s; }
-      .dtp-btn:hover { border-color: var(--dsw-alias-border-l2, #3d4354); background: color-mix(in srgb, var(--dsw-alias-bg-layer-1, #1b1f29) 90%, #fff 10%); }
+      .dtp-btn { border-radius: 8px; padding: 6px 13px; font-size: 12px; font-weight: 600; border: 1px solid #4a5470; background: linear-gradient(180deg, #343b4e, #262c3c); color: #f2f4f9; cursor: pointer; transition: background .15s, border-color .15s, transform .1s, box-shadow .15s; box-shadow: 0 1px 2px rgba(0,0,0,.35); }
+      .dtp-btn:hover { border-color: #6d7899; background: linear-gradient(180deg, #3d455b, #2d3346); }
       .dtp-btn:active { transform: scale(.97); }
-      .dtp-btn.primary { background: var(--dsw-alias-brand-primary, #3b82f6); border-color: transparent; color: #fff; box-shadow: 0 2px 8px color-mix(in srgb, var(--dsw-alias-brand-primary, #3b82f6) 35%, transparent); }
-      .dtp-btn.primary:hover { filter: brightness(1.12); }
-      .dtp-btn.ok { background: var(--dsw-alias-state-success-primary, #10b981); border-color: transparent; color: #fff; }
-      .dtp-btn.ok:hover { filter: brightness(1.12); }
-      .dtp-btn.danger { background: var(--dsw-alias-state-error-primary, #ef4444); border-color: transparent; color: #fff; }
-      .dtp-btn.danger:hover { filter: brightness(1.12); }
-      .dtp-btn.ghost { background: transparent; }
+      .dtp-btn.primary { background: linear-gradient(180deg, #3b82f6, #2563eb); border-color: #1d4ed8; color: #fff; box-shadow: 0 2px 8px rgba(37, 99, 235, .5); }
+      .dtp-btn.primary:hover { filter: brightness(1.14); }
+      .dtp-btn.ok { background: linear-gradient(180deg, #10b981, #059669); border-color: #047857; color: #fff; box-shadow: 0 2px 6px rgba(16, 185, 129, .4); }
+      .dtp-btn.ok:hover { filter: brightness(1.14); }
+      .dtp-btn.danger { background: linear-gradient(180deg, #ef4444, #dc2626); border-color: #b91c1c; color: #fff; box-shadow: 0 2px 6px rgba(239, 68, 68, .4); }
+      .dtp-btn.danger:hover { filter: brightness(1.14); }
+      .dtp-btn.ghost { background: transparent; border-color: #4a5470; color: #dfe3ee; box-shadow: none; }
+      .dtp-btn.ghost:hover { background: rgba(255,255,255,.08); border-color: #6d7899; }
       .dtp-btn.small { padding: 3px 10px; font-size: 11px; border-radius: 7px; }
       .dtp-board { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(6, minmax(170px, 1fr)); gap: 12px; padding: 14px 18px; overflow: auto; }
       .dtp-col { background: color-mix(in srgb, var(--dsw-alias-bg-layer-1, #171a22) 45%, transparent); border: 1px solid var(--dsw-alias-border-l1, #232735); border-radius: 12px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
