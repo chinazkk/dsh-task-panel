@@ -496,8 +496,8 @@ return {
         command: req.command,
         // 验收产物：一句话摘要（最新一轮执行总结）
         deliverable: lastExec ? lastExec.summary : '',
-        lastSessionId: lastExec ? lastExec.sessionId : null,
-        lastParentSessionId: lastExec ? lastExec.parentSessionId : null,
+        lastSessionId: lastExec ? (lastExec.sessionId || null) : null,
+        lastParentSessionId: lastExec ? (lastExec.parentSessionId || null) : null,
       }
     }
 

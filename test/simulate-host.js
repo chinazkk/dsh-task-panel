@@ -2,12 +2,14 @@
 // simulate-host.js · 用真实 src/host.js 源码 + mock 服务跑全流程
 // 验证：create/update/remove、双队列调度、子 agent 派发(pump)、
 //       一句话产物、对话 transcript、验收通过/返工、置顶/撤回。
-// 运行：node test/simulate-host.js
+// 运行：npm test（或 node test/simulate-host.js）
 // ─────────────────────────────────────────────────────────────
-const fs = require('node:fs')
-const vm = require('node:vm')
-const path = require('node:path')
+import fs from 'node:fs'
+import vm from 'node:vm'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'host.js'), 'utf8')
 
 // ── mocks ──────────────────────────────────────────────────

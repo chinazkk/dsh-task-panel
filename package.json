@@ -1,0 +1,37 @@
+{
+  "name": "dsh-task-panel",
+  "version": "1.0.0",
+  "description": "DeepSeek Harness 任务面板动态 Cordis 插件：需求面板 + 需求/执行双队列 + 子 session 串行执行 + 验收（一句话产物 / 跳转真实子代理对话 / 返工反馈）。",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "main": "src/host.js",
+  "scripts": {
+    "check": "node scripts/check-syntax.js",
+    "test": "node test/simulate-host.js"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh": ">=1.0.0",
+    "cordis": ">=0.0.0"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "cordis",
+    "dynamic-plugin",
+    "task-panel",
+    "requirements",
+    "kanban",
+    "task-queue",
+    "subagent"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "src/",
+    "test/",
+    "scripts/",
+    "README.md"
+  ]
+}

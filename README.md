@@ -54,6 +54,30 @@
 - Client 依赖注入：`timer`；入口为会话视图标签页 `conversation.view`（与「对话 / 轨迹」同级）
 - 沙箱适配：Host 沙箱无 `AbortController`，从 `agent/pre-step` / 工具 `exec.signal` 捕获 `AbortSignal` 构造器，以 `AbortSignal.any([])` 生成子 agent 信号。
 
+## 仓库完整性（源码即唯一来源）
+
+本仓库是运行中插件（`reqp-1` / `pkg-6`）的**唯一源码来源**：`src/host.js` 与 `src/client.js`
+与插件 Host/Client 两半**逐字节一致**（每次改动都通过 `cordis_define` 重新定义并 `cordis_run` 加载，
+再从仓库直接提交）。仓库包含：
+
+| 内容 | 文件 | 说明 |
+| --- | --- | --- |
+| 项目清单 | `package.json` | 声明对 `@deepseek-ai/dsh` / `cordis` 的 peer 依赖 + 脚本 |
+| Host 半源码 | `src/host.js` | 数据模型/状态机/双队列/子 session 派发/8 工具/11 RPC/持久化 |
+| Client 半源码 | `src/client.js` | 五列看板 UI（主题令牌美化 + 对话跳转） |
+| 逻辑测试 | `test/simulate-host.js` | 真实源码全流程模拟（11 项断言） |
+| 语法校验 | `scripts/check-syntax.js` | 校验两半源码可按沙箱方式解析 |
+| 参考材料 | `.reference/` | 架构文档 + 前代 2.1.0 实现 |
+
+```bash
+npm run check   # 语法校验（host + client）
+npm test        # 状态机/双队列/验收全流程模拟测试
+```
+
+> 依赖说明：插件运行时消费 DSH 提供的服务（`subagents` / `agents` / `sessionQuery` / `fs` /
+> `sandboxPolicy` / `systemPrompt` / `timer` 等），这些由宿主 harness 提供，**不随本仓库打包**；
+> `package.json` 的 `peerDependencies` 显式声明了这份依赖关系，保证仓库可复现。
+
 ## Agent 工具（8 个）
 
 | 工具 | 用途 |
