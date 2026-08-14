@@ -18,7 +18,7 @@
   - **执行队列 (queued)**：丢入后才排队执行，支持**置顶 / 撤回 / 删除**。
 - **子 session 执行**：队列 worker 通过 `ctx.subagents.start()` 在**新会话**中派发子 agent 串行完成任务（FIFO，同时仅 1 个 executing）。
 - **验收（非阻塞）**：执行完成即入**待验收池**，不阻塞后续任务；验收界面展示**一句话产物**（子 agent 最终交付摘要）。
-- **对话回看**：每轮执行保存子 agent 的 sessionId 与完整对话 transcript，验收时**点击「查看对话」**查看执行细节。
+- **对话回看**：每轮执行保存子 agent 的 sessionId 与父会话 id；验收时「查看对话」**跳转到真实子代理会话**（`sessions.openSubagent`），会话不可跳转时回退到已捕获的对话摘要弹窗。
 - **验收反馈返工**：验收「通过」→ 验收完成；「返工」→ 填写反馈 → 自动重入执行队列（带返工原因，≤5 次后退回需求队列防死循环）。
 - **持久化**：状态尽力持久化到 `sandboxPolicy.workspaceRoot/.dsh-task-panel/requirements.json`（Fork/Resume 保留，插件重启后状态自动恢复）。写入时显式携带 `workspace-write` 策略（沙箱默认模式为 read-only，不传策略会写盘失败）。
 

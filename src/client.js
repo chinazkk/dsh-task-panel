@@ -3,8 +3,9 @@
 // 五列看板：需求队列 → 执行队列 → 执行中 → 待验收 → 验收完成
 //   · 新增 / 编辑 / 删除需求
 //   · 丢执行 / 置顶 / 撤回
-//   · 验收：一句话产物 + 点击查看 agent 完整对话 + 通过/返工反馈
+//   · 验收：一句话产物 + 查看对话（跳转真实子代理会话）+ 通过/返工反馈
 // 入口：与「对话 / 轨迹」同级的会话视图标签页（conversation.view）。
+// 样式：主题令牌（--dsw-alias-*）+ 精致卡片/列/按钮/弹窗。
 // ─────────────────────────────────────────────────────────────
 
 return {
@@ -12,46 +13,68 @@ return {
   apply(ctx) {
     const slots = ctx.get('slots')
     if (!slots) return
+    const sessions = ctx.get('sessions')
     const h = React.createElement
 
     styles.insert(`
-      .dtp-root { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--color-bg-1, #181825); }
-      .dtp-header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--color-border, #444); flex: 0 0 auto; }
-      .dtp-header h1 { font-size: 15px; margin: 0; font-weight: 600; flex: 1; }
-      .dtp-btn { background: var(--color-bg-2, #2a2a3a); color: var(--color-text, #eee); border: 1px solid var(--color-border, #444); border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
-      .dtp-btn:hover { background: var(--color-bg-3, #33334a); }
-      .dtp-btn.primary { background: #3b82f6; border-color: #3b82f6; color: #fff; }
-      .dtp-btn.danger { background: #dc2626; border-color: #dc2626; color: #fff; }
-      .dtp-btn.ok { background: #10b981; border-color: #10b981; color: #fff; }
-      .dtp-btn.small { padding: 2px 8px; font-size: 11px; }
-      .dtp-board { flex: 1; display: grid; grid-template-columns: repeat(5, minmax(190px, 1fr)); gap: 10px; padding: 12px; overflow: auto; min-height: 0; }
-      .dtp-col { background: var(--color-bg-2, #23233a); border-radius: 10px; border: 1px solid var(--color-border, #333); display: flex; flex-direction: column; min-height: 200px; }
-      .dtp-col-head { padding: 8px 10px; font-size: 12px; font-weight: 700; border-bottom: 1px solid var(--color-border, #333); display: flex; justify-content: space-between; align-items: center; }
-      .dtp-col-body { padding: 8px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 8px; }
-      .dtp-card { background: var(--color-bg-card, #1e1e2e); border: 1px solid var(--color-border, #3a3a4a); border-radius: 8px; padding: 8px 10px; font-size: 12px; }
-      .dtp-card-title { font-weight: 600; margin-bottom: 4px; word-break: break-all; }
-      .dtp-card-meta { color: var(--color-text-2, #999); font-size: 11px; margin-bottom: 6px; }
-      .dtp-pri { display: inline-block; border-radius: 4px; padding: 0 6px; font-size: 10px; font-weight: 700; color: #fff; margin-right: 4px; }
-      .dtp-pri-critical { background: #dc2626; } .dtp-pri-high { background: #f59e0b; } .dtp-pri-medium { background: #3b82f6; } .dtp-pri-low { background: #64748b; }
-      .dtp-deliverable { background: rgba(16,185,129,.12); border: 1px solid rgba(16,185,129,.35); border-radius: 6px; padding: 6px 8px; margin: 6px 0; color: #34d399; font-size: 11px; word-break: break-all; }
-      .dtp-actions { display: flex; flex-wrap: wrap; gap: 4px; }
-      .dtp-spin { display: inline-block; width: 10px; height: 10px; border: 2px solid #f59e0b; border-top-color: transparent; border-radius: 50%; animation: dtp-spin 1s linear infinite; vertical-align: middle; }
+      .dtp-root { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--dsw-alias-bg-base, #0f1115); }
+      .dtp-header { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--dsw-alias-border-l1, #262a33); background: linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-layer-1, #171a22) 55%, transparent), transparent); }
+      .dtp-title { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+      .dtp-logo { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 17px; color: #fff; background: linear-gradient(135deg, var(--dsw-alias-brand-primary, #3b82f6), #8b5cf6); box-shadow: 0 3px 10px color-mix(in srgb, var(--dsw-alias-brand-primary, #3b82f6) 40%, transparent); flex: 0 0 auto; }
+      .dtp-title h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: .2px; color: var(--dsw-alias-label-primary, #ececf1); }
+      .dtp-title .sub { font-size: 11px; color: var(--dsw-alias-label-secondary, #8b8f9c); margin-top: 2px; }
+      .dtp-btn { border-radius: 8px; padding: 6px 13px; font-size: 12px; font-weight: 550; border: 1px solid var(--dsw-alias-border-l1, #2c3140); background: var(--dsw-alias-bg-layer-2, #20242f); color: var(--dsw-alias-label-primary, #ececf1); cursor: pointer; transition: background .15s, border-color .15s, transform .1s, box-shadow .15s; }
+      .dtp-btn:hover { border-color: var(--dsw-alias-border-l2, #3d4354); background: color-mix(in srgb, var(--dsw-alias-bg-layer-1, #1b1f29) 90%, #fff 10%); }
+      .dtp-btn:active { transform: scale(.97); }
+      .dtp-btn.primary { background: var(--dsw-alias-brand-primary, #3b82f6); border-color: transparent; color: #fff; box-shadow: 0 2px 8px color-mix(in srgb, var(--dsw-alias-brand-primary, #3b82f6) 35%, transparent); }
+      .dtp-btn.primary:hover { filter: brightness(1.12); }
+      .dtp-btn.ok { background: var(--dsw-alias-state-success-primary, #10b981); border-color: transparent; color: #fff; }
+      .dtp-btn.ok:hover { filter: brightness(1.12); }
+      .dtp-btn.danger { background: var(--dsw-alias-state-error-primary, #ef4444); border-color: transparent; color: #fff; }
+      .dtp-btn.danger:hover { filter: brightness(1.12); }
+      .dtp-btn.ghost { background: transparent; }
+      .dtp-btn.small { padding: 3px 10px; font-size: 11px; border-radius: 7px; }
+      .dtp-board { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(5, minmax(200px, 1fr)); gap: 12px; padding: 14px 18px; overflow: auto; }
+      .dtp-col { background: color-mix(in srgb, var(--dsw-alias-bg-layer-1, #171a22) 45%, transparent); border: 1px solid var(--dsw-alias-border-l1, #232735); border-radius: 12px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+      .dtp-col-head { padding: 11px 12px 9px; display: flex; align-items: center; gap: 8px; }
+      .dtp-dot { width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 8px currentColor; flex: 0 0 auto; }
+      .dtp-col-head .name { font-size: 12px; font-weight: 650; color: var(--dsw-alias-label-primary, #e4e6ec); flex: 1; letter-spacing: .2px; }
+      .dtp-count { font-size: 11px; font-weight: 600; padding: 1px 9px; border-radius: 99px; background: var(--dsw-alias-bg-layer-2, #20242f); color: var(--dsw-alias-label-secondary, #9297a5); border: 1px solid var(--dsw-alias-border-l1, #2c3140); }
+      .dtp-col-body { flex: 1; min-height: 0; padding: 4px 8px 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+      .dtp-card { background: var(--dsw-alias-bg-layer-1, #171a22); border: 1px solid var(--dsw-alias-border-l1, #262b38); border-radius: 10px; padding: 10px 12px; transition: border-color .15s, transform .15s, box-shadow .15s; }
+      .dtp-card:hover { border-color: var(--dsw-alias-border-l2, #3d4354); transform: translateY(-1px); box-shadow: 0 6px 16px rgba(0,0,0,.28); }
+      .dtp-card-title { font-weight: 600; font-size: 12.5px; color: var(--dsw-alias-label-primary, #ececf1); margin-bottom: 5px; word-break: break-all; line-height: 1.4; }
+      .dtp-card-meta { color: var(--dsw-alias-label-secondary, #9297a5); font-size: 10.5px; margin-bottom: 7px; display: flex; flex-wrap: wrap; gap: 3px 8px; align-items: center; }
+      .dtp-pri { display: inline-flex; align-items: center; gap: 5px; border-radius: 99px; padding: 1px 9px; font-size: 10px; font-weight: 700; letter-spacing: .3px; }
+      .dtp-pri::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+      .dtp-pri-critical { background: color-mix(in srgb, var(--dsw-alias-state-error-primary, #ef4444) 16%, transparent); color: var(--dsw-alias-state-error-primary, #f87171); }
+      .dtp-pri-high { background: color-mix(in srgb, var(--dsw-alias-state-warn-primary, #f59e0b) 16%, transparent); color: var(--dsw-alias-state-warn-primary, #fbbf24); }
+      .dtp-pri-medium { background: color-mix(in srgb, var(--dsw-alias-brand-primary, #3b82f6) 16%, transparent); color: var(--dsw-alias-brand-primary, #60a5fa); }
+      .dtp-pri-low { background: color-mix(in srgb, var(--dsw-alias-label-secondary, #9ca3af) 14%, transparent); color: var(--dsw-alias-label-secondary, #9aa0ac); }
+      .dtp-deliverable { display: flex; gap: 6px; align-items: flex-start; margin: 2px 0 8px; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--dsw-alias-state-success-primary, #10b981) 11%, transparent); border: 1px solid color-mix(in srgb, var(--dsw-alias-state-success-primary, #10b981) 26%, transparent); color: var(--dsw-alias-state-success-primary, #34d399); font-size: 11px; line-height: 1.5; word-break: break-all; }
+      .dtp-deliverable .lab { font-weight: 700; flex: 0 0 auto; }
+      .dtp-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+      .dtp-spin { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--dsw-alias-state-warn-primary, #f59e0b); border-top-color: transparent; border-radius: 50%; animation: dtp-spin .8s linear infinite; vertical-align: middle; margin-right: 6px; }
       @keyframes dtp-spin { to { transform: rotate(360deg); } }
-      .dtp-modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 10000; }
-      .dtp-modal { background: var(--color-bg-card, #1e1e2e); border: 1px solid var(--color-border, #444); border-radius: 12px; padding: 16px; width: 520px; max-width: 92vw; max-height: 84vh; overflow: auto; }
-      .dtp-modal h2 { font-size: 14px; margin: 0 0 12px; }
-      .dtp-field { margin-bottom: 10px; }
-      .dtp-field label { display: block; font-size: 11px; color: var(--color-text-2, #999); margin-bottom: 4px; }
-      .dtp-field input, .dtp-field select, .dtp-field textarea { width: 100%; box-sizing: border-box; background: var(--color-bg-2, #23233a); color: var(--color-text, #eee); border: 1px solid var(--color-border, #444); border-radius: 6px; padding: 6px 8px; font-size: 12px; }
-      .dtp-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+      .dtp-badge { font-size: 11px; color: var(--dsw-alias-state-success-primary, #34d399); font-weight: 600; }
+      .dtp-empty { color: var(--dsw-alias-label-secondary, #6b7080); font-size: 11px; text-align: center; padding: 18px 0; }
+      .dtp-modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.55); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 10000; }
+      .dtp-modal { background: var(--dsw-alias-bg-overlay, #1a1e28); border: 1px solid var(--dsw-alias-border-l2, #3a4052); border-radius: 14px; padding: 18px 20px; width: 540px; max-width: 92vw; max-height: 84vh; overflow: auto; box-shadow: 0 24px 70px rgba(0,0,0,.5); }
+      .dtp-modal h2 { font-size: 14px; margin: 0 0 14px; color: var(--dsw-alias-label-primary, #ececf1); font-weight: 650; }
+      .dtp-field { margin-bottom: 12px; }
+      .dtp-field label { display: block; font-size: 11px; color: var(--dsw-alias-label-secondary, #9297a5); margin-bottom: 5px; font-weight: 550; }
+      .dtp-field input, .dtp-field select, .dtp-field textarea { width: 100%; box-sizing: border-box; background: var(--dsw-alias-bg-layer-2, #20242f); color: var(--dsw-alias-label-primary, #ececf1); border: 1px solid var(--dsw-alias-border-l1, #2c3140); border-radius: 8px; padding: 7px 10px; font-size: 12px; outline: none; transition: border-color .15s; }
+      .dtp-field input:focus, .dtp-field select:focus, .dtp-field textarea:focus { border-color: var(--dsw-alias-brand-primary, #3b82f6); }
+      .dtp-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
       .dtp-transcript { display: flex; flex-direction: column; gap: 8px; }
-      .dtp-msg { border-radius: 8px; padding: 8px 10px; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
-      .dtp-msg.user { background: rgba(59,130,246,.15); border-left: 3px solid #3b82f6; }
-      .dtp-msg.assistant { background: rgba(139,92,246,.15); border-left: 3px solid #8b5cf6; }
-      .dtp-msg.tool { background: rgba(100,116,139,.15); border-left: 3px solid #64748b; color: var(--color-text-2, #aaa); font-size: 11px; }
-      .dtp-msg .who { font-weight: 700; display: block; margin-bottom: 2px; }
-      .dtp-empty { color: var(--color-text-2, #777); font-size: 11px; text-align: center; padding: 12px 0; }
-      .dtp-toast { position: fixed; bottom: 24px; right: 24px; z-index: 10001; background: #111; color: #eee; border: 1px solid #444; border-radius: 8px; padding: 8px 14px; font-size: 12px; }
+      .dtp-msg { border-radius: 10px; padding: 9px 12px; font-size: 12px; white-space: pre-wrap; word-break: break-all; line-height: 1.55; }
+      .dtp-msg.user { background: color-mix(in srgb, var(--dsw-alias-brand-primary, #3b82f6) 12%, transparent); border-left: 3px solid var(--dsw-alias-brand-primary, #3b82f6); }
+      .dtp-msg.assistant { background: color-mix(in srgb, #8b5cf6 12%, transparent); border-left: 3px solid #8b5cf6; }
+      .dtp-msg.tool { background: color-mix(in srgb, var(--dsw-alias-label-secondary, #9ca3af) 12%, transparent); border-left: 3px solid var(--dsw-alias-label-secondary, #9ca3af); color: var(--dsw-alias-label-secondary, #a0a6b2); font-size: 11px; }
+      .dtp-msg .who { font-weight: 700; display: block; margin-bottom: 3px; color: var(--dsw-alias-label-primary, #ececf1); }
+      .dtp-toast { position: fixed; bottom: 26px; right: 26px; z-index: 10001; background: var(--dsw-alias-bg-overlay, #1a1e28); color: var(--dsw-alias-label-primary, #ececf1); border: 1px solid var(--dsw-alias-border-l2, #3a4052); border-radius: 10px; padding: 9px 15px; font-size: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.4); }
+      .dtp-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+      .dtp-scroll::-webkit-scrollbar-thumb { background: var(--dsw-alias-border-l2, #333948); border-radius: 99px; }
     `)
 
     // ── 数据轮询 ──
@@ -66,6 +89,27 @@ return {
         return () => { if (typeof disposer === 'function') disposer() }
       }, [refresh])
       return [data, refresh]
+    }
+
+    // ── 跳转到真实子代理会话（失败回退 false → 显示对话摘要弹窗） ──
+    async function openAgentConversation(sessionId, parentSessionId) {
+      if (!sessions || !sessionId) return false
+      const parent = parentSessionId || null
+      try {
+        if (parent && typeof sessions.refreshSubagents === 'function') {
+          try { await sessions.refreshSubagents(parent) } catch (e) { /* noop */ }
+        }
+        if (parent && typeof sessions.subagentAddress === 'function') {
+          const known = sessions.subagentAddress(sessionId)
+          if (known) { sessions.openSubagent(known); return true }
+        }
+        if (parent && typeof sessions.openSubagent === 'function') {
+          sessions.openSubagent({ parentSessionId: parent, childSessionId: sessionId, mode: 'one-shot' })
+          return true
+        }
+        if (typeof sessions.open === 'function') { sessions.open(sessionId); return true }
+      } catch (e) { /* fallthrough */ }
+      return false
     }
 
     // ── 主干组件（渲染在会话视图标签页内） ──
@@ -96,23 +140,40 @@ return {
         host.call(method, args).then(() => refresh()).catch((e) => setToast('操作失败：' + (e && e.message ? e.message : String(e))))
       }
 
+      // 查看对话：优先跳转真实子代理会话；不可跳转时回退到对话摘要弹窗
+      const viewConversation = (r) => {
+        openAgentConversation(r.lastSessionId, r.lastParentSessionId).then((ok) => {
+          if (!ok) setConvReq({ id: r.id, title: r.title, sessionId: r.lastSessionId })
+        })
+      }
+
+      const total = data ? data.requirements.length : 0
+      const executing = byStage('executing').length
+      const accepting = byStage('accepting').length
+
       return h('div', { className: 'dtp-root' },
         h('div', { className: 'dtp-header' },
-          h('h1', null, '任务面板 · 需求面板'),
-          h('span', { style: { fontSize: 11, color: '#888' } },
-            (data ? data.requirements.length : 0) + ' 条需求 · 队列自动在子 session 执行'),
+          h('div', { className: 'dtp-title' },
+            h('div', { className: 'dtp-logo' }, '▦'),
+            h('div', null,
+              h('h1', null, '任务面板'),
+              h('div', { className: 'sub' },
+                total + ' 条需求' + (executing ? ' · ' + executing + ' 执行中' : '') + (accepting ? ' · ' + accepting + ' 待验收' : '') + ' · 队列在子 session 自动执行'),
+            ),
+          ),
           h('button', { className: 'dtp-btn primary', onClick: () => setFormReq({ mode: 'create' }) }, '＋ 新建需求'),
         ),
-        h('div', { className: 'dtp-board' },
+        h('div', { className: 'dtp-board dtp-scroll' },
           columns.map((col) =>
             h('div', { className: 'dtp-col', key: col.stage, style: { borderTop: '3px solid ' + col.color } },
               h('div', { className: 'dtp-col-head' },
-                h('span', null, col.title),
-                h('span', { style: { color: '#888' } }, String(col.count)),
+                h('span', { className: 'dtp-dot', style: { color: col.color, background: col.color } }),
+                h('span', { className: 'name' }, col.title),
+                h('span', { className: 'dtp-count' }, String(col.count)),
               ),
-              h('div', { className: 'dtp-col-body' },
+              h('div', { className: 'dtp-col-body dtp-scroll' },
                 byStage(col.stage).length === 0
-                  ? h('div', { className: 'dtp-empty' }, '— 空 —')
+                  ? h('div', { className: 'dtp-empty' }, '— 暂无需求 —')
                   : byStage(col.stage).map((r) =>
                       h(Card, {
                         key: r.id,
@@ -125,7 +186,7 @@ return {
                         onTop: () => doCall('top', { id: r.id }),
                         onAccept: () => doCall('accept', { id: r.id }),
                         onRework: () => setReworkReq({ id: r.id, title: r.title }),
-                        onConv: () => setConvReq({ id: r.id, title: r.title, sessionId: r.lastSessionId }),
+                        onConv: () => viewConversation(r),
                       }),
                     ),
               ),
@@ -133,7 +194,7 @@ return {
           ),
         ),
         formReq ? h(RequirementForm, {
-          req: formReq.mode === 'edit' && data ? data.requirements.find((r) => r.id === formReq.id) : null,
+          req: formReq.mode === 'edit' && data ? data.requirements.find((x) => x.id === formReq.id) : null,
           onClose: () => setFormReq(null),
           onSaved: () => { setFormReq(null); refresh() },
           onToast: (m) => setToast(m),
@@ -162,22 +223,24 @@ return {
         return () => { if (typeof disposer === 'function') disposer() }
       }, [confirmDel])
 
+      const delBtn = h('button', { className: 'dtp-btn small danger', onClick: () => { if (confirmDel) { setConfirmDel(false); onDelete() } else setConfirmDel(true) } }, confirmDel ? '确认删除?' : '删除')
+
       let actions = null
       if (stage === 'backlog') {
         actions = h('div', { className: 'dtp-actions' },
           h('button', { className: 'dtp-btn small primary', onClick: onDispatch }, '丢执行'),
           h('button', { className: 'dtp-btn small', onClick: onEdit }, '编辑'),
-          h('button', { className: 'dtp-btn small danger', onClick: () => { if (confirmDel) { setConfirmDel(false); onDelete() } else setConfirmDel(true) } }, confirmDel ? '确认删除?' : '删除'),
+          delBtn,
         )
       } else if (stage === 'queued') {
         actions = h('div', { className: 'dtp-actions' },
           h('button', { className: 'dtp-btn small', onClick: onTop }, '⤒ 置顶'),
           h('button', { className: 'dtp-btn small', onClick: onRecall }, '撤回'),
-          h('button', { className: 'dtp-btn small danger', onClick: () => { if (confirmDel) { setConfirmDel(false); onDelete() } else setConfirmDel(true) } }, confirmDel ? '确认删除?' : '删除'),
+          delBtn,
         )
       } else if (stage === 'executing') {
         actions = h('div', { className: 'dtp-actions' },
-          h('span', { style: { fontSize: 11, color: '#f59e0b' } }, h('span', { className: 'dtp-spin' }), ' 子 agent 执行中…'),
+          h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-state-warn-primary, #fbbf24)' } }, h('span', { className: 'dtp-spin' }), '子 agent 执行中…'),
         )
       } else if (stage === 'accepting') {
         actions = h('div', { className: 'dtp-actions' },
@@ -188,7 +251,7 @@ return {
       } else if (stage === 'accepted') {
         actions = h('div', { className: 'dtp-actions' },
           h('button', { className: 'dtp-btn small', onClick: onConv }, '查看对话'),
-          h('span', { style: { fontSize: 11, color: '#34d399' } }, '✓ 验收通过'),
+          h('span', { className: 'dtp-badge' }, '✓ 验收通过'),
         )
       }
 
@@ -197,16 +260,19 @@ return {
       return h('div', { className: 'dtp-card' },
         h('div', { className: 'dtp-card-title' },
           h('span', { className: 'dtp-pri dtp-pri-' + pri }, pri),
+          ' ',
           req.title,
         ),
         h('div', { className: 'dtp-card-meta' },
-          req.id + ' · 要素' + req.elementCount + ' · 验收' + req.criterionCount +
-          (req.reworkCount ? ' · 返工' + req.reworkCount : '') +
-          (req.reworkReason ? ' · ' + String(req.reworkReason).slice(0, 24) : ''),
+          h('span', null, req.id),
+          h('span', null, '要素 ' + req.elementCount),
+          h('span', null, '验收 ' + req.criterionCount),
+          req.reworkCount ? h('span', { style: { color: 'var(--dsw-alias-state-warn-primary, #fbbf24)' } }, '返工 ' + req.reworkCount) : null,
         ),
         (stage === 'accepting' || stage === 'accepted') && req.deliverable
           ? h('div', { className: 'dtp-deliverable', title: '验收产物（一句话）' },
-              '产物：' + req.deliverable,
+              h('span', { className: 'lab' }, '产物'),
+              req.deliverable,
             )
           : null,
         actions,
@@ -311,7 +377,7 @@ return {
       )
     }
 
-    // ── 查看 agent 对话 ──
+    // ── 对话摘要弹窗（跳转真实子代理会话不可用时回退） ──
     function ConversationModal(props) {
       const { req, onClose } = props
       const [detail, setDetail] = React.useState(null)
@@ -329,12 +395,13 @@ return {
 
       return h('div', { className: 'dtp-modal-backdrop', onClick: onClose },
         h('div', { className: 'dtp-modal', style: { width: 640 }, onClick: (e) => e.stopPropagation() },
-          h('h2', null, 'Agent 执行对话 · ' + req.title),
-          h('div', { style: { fontSize: 11, color: '#888', marginBottom: 8 } },
-            'sessionId: ' + (detail && detail.sessionId ? detail.sessionId : '（无）') + ' · 共 ' + rows.length + ' 条消息'),
+          h('h2', null, 'Agent 对话摘要 · ' + req.title),
+          h('div', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary, #9297a5)', marginBottom: 10 } },
+            'sessionId: ' + (detail && detail.sessionId ? detail.sessionId : '（无）') + ' · 共 ' + rows.length + ' 条消息' +
+            '（会话已不可直接跳转，展示已捕获的摘要）'),
           rows.length === 0
             ? h('div', { className: 'dtp-empty' }, '（暂无对话记录）')
-            : h('div', { className: 'dtp-transcript' },
+            : h('div', { className: 'dtp-transcript dtp-scroll' },
                 rows.map((m, i) =>
                   h('div', { className: 'dtp-msg ' + m.role, key: i },
                     h('span', { className: 'who' }, who[m.role] || m.role),

@@ -265,6 +265,7 @@ return {
         isRework: round > 1,
         reworkReason: req.reworkReason || undefined,
         sessionId: null,
+        parentSessionId: null,
         stopReason: null,
         transcript: [],
       })
@@ -282,6 +283,7 @@ return {
         exec.summary = String(summary || '')
         if (meta) {
           exec.sessionId = meta.sessionId || null
+          exec.parentSessionId = meta.parentSessionId || null
           exec.stopReason = meta.stopReason || null
           exec.transcript = Array.isArray(meta.transcript) ? meta.transcript : []
         }
@@ -456,6 +458,7 @@ return {
         try { if (run && typeof run.dispose === 'function') await run.dispose() } catch (e) { /* noop */ }
         await completeExecution(id, summary, {
           sessionId: sessionId,
+          parentSessionId: parent && parent.session ? parent.session.id : null,
           stopReason: result && result.stopReason,
           transcript: transcript,
         })
@@ -494,6 +497,7 @@ return {
         // 验收产物：一句话摘要（最新一轮执行总结）
         deliverable: lastExec ? lastExec.summary : '',
         lastSessionId: lastExec ? lastExec.sessionId : null,
+        lastParentSessionId: lastExec ? lastExec.parentSessionId : null,
       }
     }
 
@@ -513,6 +517,7 @@ return {
         reworkReason: r.reworkReason,
         deliverable: r.deliverable,
         lastSessionId: r.lastSessionId,
+        lastParentSessionId: r.lastParentSessionId,
         elementCount: r.elements.length,
         criterionCount: r.acceptanceCriteria.length,
         executionCount: r.executions.length,
