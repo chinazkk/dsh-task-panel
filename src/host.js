@@ -19,6 +19,8 @@ return {
     const timerService = ctx.get('timer')
 
     const MAX_REWORK = 5
+    // 持久化诊断（通过 list_requirements 输出，便于定位写入失败原因）
+    let persistDiag = 'ok'
 
     // ── 沙箱没有 AbortController，从真实事件捕获 AbortSignal 构造器 ──
     let AbortSignalCtor = null
@@ -53,18 +55,28 @@ return {
     // ── 持久化（best effort：失败只告警，不阻断） ──
     let dataTarget = null
     let dataTargetPromise = null
+    let writePolicy = null // 显式 workspace-write 策略（默认模式是 read-only，必须显式传入 fs.writeText）
     function resolveDataTarget() {
       if (dataTarget) return Promise.resolve(dataTarget)
       if (dataTargetPromise) return dataTargetPromise
       dataTargetPromise = (async () => {
         try {
-          if (!fs || !sandboxPolicy) return null
-          const root = sandboxPolicy.workspaceRoot
-          if (!root || typeof root !== 'string') return null
+          if (!fs || !sandboxPolicy) {
+            persistDiag = 'fs=' + !!fs + ' sandboxPolicy=' + !!sandboxPolicy + '（fs 或 sandboxPolicy 不可用）'
+            return null
+          }
+          writePolicy = sandboxPolicy.resolve({ mode: 'workspace-write' })
+          const root = writePolicy && writePolicy.workspaceRoot ? writePolicy.workspaceRoot : sandboxPolicy.workspaceRoot
+          if (!root || typeof root !== 'string') {
+            persistDiag = 'workspaceRoot 为空: ' + String(root)
+            return null
+          }
           const target = await fs.resolve(root + '/.dsh-task-panel/requirements.json')
           dataTarget = target
+          persistDiag = 'ok -> ' + root + '/.dsh-task-panel/requirements.json'
           return target
         } catch (e) {
+          persistDiag = 'resolve failed: ' + (e && e.message ? e.message : String(e))
           console.error('resolve data target failed', e)
           return null
         }
@@ -93,8 +105,12 @@ return {
         try {
           const target = await resolveDataTarget()
           if (!target) return
-          await fs.writeText(target, JSON.stringify({ requirements, backlog, execQueue }))
-        } catch (e) { console.error('persist failed', e) }
+          await fs.writeText(target, JSON.stringify({ requirements, backlog, execQueue }), undefined, undefined, writePolicy)
+          persistDiag = 'written'
+        } catch (e) {
+          persistDiag = 'write failed: ' + (e && e.message ? e.message : String(e))
+          console.error('persist failed', e)
+        }
       })()
       // 不让写盘失败影响主流程
       p.catch(() => {})
@@ -511,6 +527,7 @@ return {
         backlog: backlog.slice(),
         execQueue: execQueue.slice(),
         maxRework: MAX_REWORK,
+        persistDiag,
       }
     }
 
@@ -689,8 +706,8 @@ return {
         const sv = stateView()
         const all = sv.requirements
         const list = args.stage ? all.filter((r) => r.stage === args.stage) : all
-        if (!list.length) return '（无' + (args.stage || '任何阶段') + '需求）'
-        return list.map((r) => '-' + r.id + ' [' + r.priority + '] ' + r.title + '（' + r.stage +
+        if (!list.length) return '（无' + (args.stage || '任何阶段') + '需求）\n【存储】' + sv.persistDiag
+        return '【存储】' + sv.persistDiag + '\n' + list.map((r) => '-' + r.id + ' [' + r.priority + '] ' + r.title + '（' + r.stage +
           (r.reworkCount ? '，返工' + r.reworkCount + '次' : '') + '）').join('\n')
       },
     }))
