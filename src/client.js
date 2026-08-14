@@ -1,11 +1,12 @@
 // ─────────────────────────────────────────────────────────────
 // dsh-task-panel · Client 半
-// 五列看板：需求队列 → 执行队列 → 执行中 → 待验收 → 验收完成
+// 六列看板：需求队列 → 执行队列 → 执行中 → 已暂停 → 待验收 → 验收完成
 //   · 新增 / 编辑 / 删除需求
 //   · 丢执行 / 置顶 / 撤回
 //   · 验收：一句话产物 + 查看对话（跳转真实子代理会话）+ 通过/返工反馈
 // 入口：与「对话 / 轨迹」同级的会话视图标签页（conversation.view）。
-// 样式：主题令牌（--dsw-alias-*）+ 精致卡片/列/按钮/弹窗。
+// 样式：主题令牌（--dsw-alias-*）+ 精致卡片/列/按钮/弹窗；
+//       按钮使用固定高对比配色（不依赖主题变量，任何主题下都清晰）。
 // ─────────────────────────────────────────────────────────────
 
 return {
@@ -20,7 +21,7 @@ return {
       .dtp-root { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--dsw-alias-bg-base, #0f1115); }
       .dtp-header { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--dsw-alias-border-l1, #262a33); background: linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-layer-1, #171a22) 55%, transparent), transparent); }
       .dtp-title { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
-      .dtp-logo { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 17px; color: #fff; background: linear-gradient(135deg, var(--dsw-alias-brand-primary, #3b82f6), #8b5cf6); box-shadow: 0 3px 10px color-mix(in srgb, var(--dsw-alias-brand-primary, #3b82f6) 40%, transparent); flex: 0 0 auto; }
+      .dtp-logo { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 17px; color: #fff; background: linear-gradient(135deg, #3b82f6, #8b5cf6); box-shadow: 0 3px 10px rgba(59, 130, 246, .4); flex: 0 0 auto; }
       .dtp-title h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: .2px; color: var(--dsw-alias-label-primary, #ececf1); }
       .dtp-title .sub { font-size: 11px; color: var(--dsw-alias-label-secondary, #8b8f9c); margin-top: 2px; }
       .dtp-btn { border-radius: 8px; padding: 6px 13px; font-size: 12px; font-weight: 600; border: 1px solid #4a5470; background: linear-gradient(180deg, #343b4e, #262c3c); color: #f2f4f9; cursor: pointer; transition: background .15s, border-color .15s, transform .1s, box-shadow .15s; box-shadow: 0 1px 2px rgba(0,0,0,.35); }
@@ -48,16 +49,16 @@ return {
       .dtp-card-meta { color: var(--dsw-alias-label-secondary, #9297a5); font-size: 10.5px; margin-bottom: 7px; display: flex; flex-wrap: wrap; gap: 3px 8px; align-items: center; }
       .dtp-pri { display: inline-flex; align-items: center; gap: 5px; border-radius: 99px; padding: 1px 9px; font-size: 10px; font-weight: 700; letter-spacing: .3px; }
       .dtp-pri::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
-      .dtp-pri-critical { background: color-mix(in srgb, var(--dsw-alias-state-error-primary, #ef4444) 16%, transparent); color: var(--dsw-alias-state-error-primary, #f87171); }
-      .dtp-pri-high { background: color-mix(in srgb, var(--dsw-alias-state-warn-primary, #f59e0b) 16%, transparent); color: var(--dsw-alias-state-warn-primary, #fbbf24); }
-      .dtp-pri-medium { background: color-mix(in srgb, var(--dsw-alias-brand-primary, #3b82f6) 16%, transparent); color: var(--dsw-alias-brand-primary, #60a5fa); }
-      .dtp-pri-low { background: color-mix(in srgb, var(--dsw-alias-label-secondary, #9ca3af) 14%, transparent); color: var(--dsw-alias-label-secondary, #9aa0ac); }
-      .dtp-deliverable { display: flex; gap: 6px; align-items: flex-start; margin: 2px 0 8px; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--dsw-alias-state-success-primary, #10b981) 11%, transparent); border: 1px solid color-mix(in srgb, var(--dsw-alias-state-success-primary, #10b981) 26%, transparent); color: var(--dsw-alias-state-success-primary, #34d399); font-size: 11px; line-height: 1.5; word-break: break-all; }
+      .dtp-pri-critical { background: rgba(239, 68, 68, .16); color: #f87171; }
+      .dtp-pri-high { background: rgba(245, 158, 11, .16); color: #fbbf24; }
+      .dtp-pri-medium { background: rgba(59, 130, 246, .16); color: #60a5fa; }
+      .dtp-pri-low { background: rgba(156, 163, 175, .14); color: #9aa0ac; }
+      .dtp-deliverable { display: flex; gap: 6px; align-items: flex-start; margin: 2px 0 8px; padding: 8px 10px; border-radius: 8px; background: rgba(16, 185, 129, .11); border: 1px solid rgba(16, 185, 129, .28); color: #34d399; font-size: 11px; line-height: 1.5; word-break: break-all; }
       .dtp-deliverable .lab { font-weight: 700; flex: 0 0 auto; }
       .dtp-actions { display: flex; flex-wrap: wrap; gap: 5px; }
-      .dtp-spin { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--dsw-alias-state-warn-primary, #f59e0b); border-top-color: transparent; border-radius: 50%; animation: dtp-spin .8s linear infinite; vertical-align: middle; margin-right: 6px; }
+      .dtp-spin { display: inline-block; width: 11px; height: 11px; border: 2px solid #f59e0b; border-top-color: transparent; border-radius: 50%; animation: dtp-spin .8s linear infinite; vertical-align: middle; margin-right: 6px; }
       @keyframes dtp-spin { to { transform: rotate(360deg); } }
-      .dtp-badge { font-size: 11px; color: var(--dsw-alias-state-success-primary, #34d399); font-weight: 600; }
+      .dtp-badge { font-size: 11px; color: #34d399; font-weight: 600; }
       .dtp-empty { color: var(--dsw-alias-label-secondary, #6b7080); font-size: 11px; text-align: center; padding: 18px 0; }
       .dtp-modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.55); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 10000; }
       .dtp-modal { background: var(--dsw-alias-bg-overlay, #1a1e28); border: 1px solid var(--dsw-alias-border-l2, #3a4052); border-radius: 14px; padding: 18px 20px; width: 540px; max-width: 92vw; max-height: 84vh; overflow: auto; box-shadow: 0 24px 70px rgba(0,0,0,.5); }
@@ -65,13 +66,13 @@ return {
       .dtp-field { margin-bottom: 12px; }
       .dtp-field label { display: block; font-size: 11px; color: var(--dsw-alias-label-secondary, #9297a5); margin-bottom: 5px; font-weight: 550; }
       .dtp-field input, .dtp-field select, .dtp-field textarea { width: 100%; box-sizing: border-box; background: var(--dsw-alias-bg-layer-2, #20242f); color: var(--dsw-alias-label-primary, #ececf1); border: 1px solid var(--dsw-alias-border-l1, #2c3140); border-radius: 8px; padding: 7px 10px; font-size: 12px; outline: none; transition: border-color .15s; }
-      .dtp-field input:focus, .dtp-field select:focus, .dtp-field textarea:focus { border-color: var(--dsw-alias-brand-primary, #3b82f6); }
+      .dtp-field input:focus, .dtp-field select:focus, .dtp-field textarea:focus { border-color: #3b82f6; }
       .dtp-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
       .dtp-transcript { display: flex; flex-direction: column; gap: 8px; }
       .dtp-msg { border-radius: 10px; padding: 9px 12px; font-size: 12px; white-space: pre-wrap; word-break: break-all; line-height: 1.55; }
-      .dtp-msg.user { background: color-mix(in srgb, var(--dsw-alias-brand-primary, #3b82f6) 12%, transparent); border-left: 3px solid var(--dsw-alias-brand-primary, #3b82f6); }
-      .dtp-msg.assistant { background: color-mix(in srgb, #8b5cf6 12%, transparent); border-left: 3px solid #8b5cf6; }
-      .dtp-msg.tool { background: color-mix(in srgb, var(--dsw-alias-label-secondary, #9ca3af) 12%, transparent); border-left: 3px solid var(--dsw-alias-label-secondary, #9ca3af); color: var(--dsw-alias-label-secondary, #a0a6b2); font-size: 11px; }
+      .dtp-msg.user { background: rgba(59, 130, 246, .12); border-left: 3px solid #3b82f6; }
+      .dtp-msg.assistant { background: rgba(139, 92, 246, .12); border-left: 3px solid #8b5cf6; }
+      .dtp-msg.tool { background: rgba(156, 163, 175, .12); border-left: 3px solid #9ca3af; color: var(--dsw-alias-label-secondary, #a0a6b2); font-size: 11px; }
       .dtp-msg .who { font-weight: 700; display: block; margin-bottom: 3px; color: var(--dsw-alias-label-primary, #ececf1); }
       .dtp-toast { position: fixed; bottom: 26px; right: 26px; z-index: 10001; background: var(--dsw-alias-bg-overlay, #1a1e28); color: var(--dsw-alias-label-primary, #ececf1); border: 1px solid var(--dsw-alias-border-l2, #3a4052); border-radius: 10px; padding: 9px 15px; font-size: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.4); }
       .dtp-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -245,7 +246,7 @@ return {
         )
       } else if (stage === 'executing') {
         actions = h('div', { className: 'dtp-actions' },
-          h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-state-warn-primary, #fbbf24)', flexBasis: '100%' } }, h('span', { className: 'dtp-spin' }), '子 agent 执行中…'),
+          h('span', { style: { fontSize: 11, color: '#fbbf24', flexBasis: '100%' } }, h('span', { className: 'dtp-spin' }), '子 agent 执行中…'),
           h('button', { className: 'dtp-btn small', onClick: onPause }, '⏸ 暂停'),
           h('button', { className: 'dtp-btn small danger', onClick: onStop }, '⏹ 停止'),
         )
@@ -279,7 +280,7 @@ return {
           h('span', null, req.id),
           h('span', null, '要素 ' + req.elementCount),
           h('span', null, '验收 ' + req.criterionCount),
-          req.reworkCount ? h('span', { style: { color: 'var(--dsw-alias-state-warn-primary, #fbbf24)' } }, '返工 ' + req.reworkCount) : null,
+          req.reworkCount ? h('span', { style: { color: '#fbbf24' } }, '返工 ' + req.reworkCount) : null,
         ),
         (stage === 'accepting' || stage === 'accepted') && req.deliverable
           ? h('div', { className: 'dtp-deliverable', title: '验收产物（一句话）' },

@@ -2,7 +2,7 @@
 
 任务面板（Task Panel）插件 —— 基于 DeepSeek Harness (DSH) 的动态 Cordis 插件（Host + Client）。
 
-五列看板 + 双队列任务队列：需求提出/修改/删除 → 丢入执行队列 → 在**子 session** 中由 agent 串行完成任务 → 验收（**一句话产物** + **点击查看 agent 完整对话** + **验收反馈返工重入队列**）。
+六列看板 + 双队列任务队列：需求提出/修改/删除 → 丢入执行队列 → 在**子 session** 中由 agent 串行完成任务 → 验收（**一句话产物** + **点击查看 agent 完整对话** + **验收反馈返工重入队列**）。
 
 > 设计依据：
 > - 架构文档：[`DeepSeek Harness 架构 + 需求面板三层设计`](https://chinazkk.cn/v1/oss/?path=17867249466595.html)
@@ -44,11 +44,35 @@
 | 文件 | 平台 | 职责 |
 | --- | --- | --- |
 | `src/host.js` | Host | 数据模型 + 状态机 + 双队列调度 + 子 session 派发 + 8 个 Agent 工具 + Client RPC + 持久化 |
-| `src/client.js` | Client | 五列看板 + 需求表单 + 验收面板（产物/对话/返工）；入口为会话视图标签页「任务面板」 |
+| `src/client.js` | Client | 六列看板 + 需求表单 + 验收面板（产物/对话/返工/暂停恢复）；入口为会话视图标签页「任务面板」 |
 
 ## 安装（动态插件）
 
 本插件作为 DSH **动态 Cordis 插件**交付：通过 `cordis_define` / `cordis_run` 加载 Host + Client 两半。
+
+**从 Git 安装步骤**（`src/host.js` + `src/client.js` 即全部插件代码）：
+
+```bash
+# 1. 克隆仓库（私有仓库需已授权）
+git clone git@github.com:chinazkk/dsh-task-panel.git
+cd dsh-task-panel
+
+# 2. 校验代码（语法 + 全流程模拟测试，均不依赖 DSH 运行时）
+npm install            # 仅安装本地脚本依赖（peer 依赖 @deepseek-ai/dsh、cordis 由宿主 DSH 提供）
+npm run check          # 语法校验 host + client
+npm test               # 16 项断言全流程模拟
+
+# 3. 在 DSH 会话中注册运行（Host 半 = src/host.js 全文，Client 半 = src/client.js 全文）
+#    cordis_define(kind: existing, pluginId: 已有插件ID 或 kind: new 新建)
+#      - code.host   ← 粘贴 src/host.js 全文
+#      - code.client ← 粘贴 src/client.js 全文
+#    cordis_run(packageId, mode: update/run)
+#    面板入口：会话视图标签页「任务面板」（与「对话 / 轨迹」同级）
+```
+
+> 说明：DSH 动态插件没有独立的 npm 安装包——`src/host.js` / `src/client.js`
+> 就是插件的全部可部署代码，仓库即唯一源码来源，`cordis_define` 时整文件粘贴即可。
+> 若目标 DSH 已运行本插件（`reqp-1`），只需把新源码粘贴到新 Package 后 `cordis_run update`。
 
 - Host 依赖注入：`subagents`、`agents`（可选：`sessionQuery`、`fs`、`sandboxPolicy`、`systemPrompt`、`timer`）
 - Client 依赖注入：`timer`；入口为会话视图标签页 `conversation.view`（与「对话 / 轨迹」同级）
@@ -56,16 +80,16 @@
 
 ## 仓库完整性（源码即唯一来源）
 
-本仓库是运行中插件（`reqp-1` / `pkg-6`）的**唯一源码来源**：`src/host.js` 与 `src/client.js`
+本仓库是运行中插件（`reqp-1` / 当前 `pkg-13`）的**唯一源码来源**：`src/host.js` 与 `src/client.js`
 与插件 Host/Client 两半**逐字节一致**（每次改动都通过 `cordis_define` 重新定义并 `cordis_run` 加载，
 再从仓库直接提交）。仓库包含：
 
 | 内容 | 文件 | 说明 |
 | --- | --- | --- |
 | 项目清单 | `package.json` | 声明对 `@deepseek-ai/dsh` / `cordis` 的 peer 依赖 + 脚本 |
-| Host 半源码 | `src/host.js` | 数据模型/状态机/双队列/子 session 派发/8 工具/11 RPC/持久化 |
-| Client 半源码 | `src/client.js` | 五列看板 UI（主题令牌美化 + 对话跳转） |
-| 逻辑测试 | `test/simulate-host.js` | 真实源码全流程模拟（11 项断言） |
+| Host 半源码 | `src/host.js` | 数据模型/状态机/双队列/子 session 派发/8 工具/14 RPC/持久化 |
+| Client 半源码 | `src/client.js` | 六列看板 UI（固定高对比按钮 + 对话跳转） |
+| 逻辑测试 | `test/simulate-host.js` | 真实源码全流程模拟（16 项断言） |
 | 语法校验 | `scripts/check-syntax.js` | 校验两半源码可按沙箱方式解析 |
 | 参考材料 | `.reference/` | 架构文档 + 前代 2.1.0 实现 |
 
