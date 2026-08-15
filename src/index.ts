@@ -157,15 +157,28 @@ return {
     // ── 持久化（best effort：失败只告警，不阻断） ──
     // 数据目录策略：优先需求绑定目录所在项目根（lastWorkdir 即用户指定的持久化目录，
     // 例如 /workspace/dsh-task-panel），数据落在 <项目根>/.dsh-task-panel/requirements.json；
-    // lastWorkdir 未设置时回退 sandboxPolicy.workspaceRoot（旧位置，含历史数据可迁移）。
+    // lastWorkdir 未设置时回退根会话项目区 / sandboxPolicy.workspaceRoot（旧位置，含历史数据可迁移）。
+    // bundle 是应用级插件：无 session 时 sandboxPolicy.resolve() 的策略根是 process.cwd()
+    // （GUI 启动目录），会拒绝写绑定目录；因此解析写盘策略时带上根 agent 的 session，
+    // 策略根 = 根会话 cwd（用户实际项目区），绑定目录落盘才被允许（fs 服务按传入 policy 裁决）。
     let dataTarget = null
     let dataBaseDir = null
     let dataTargetPromise = null
     let writePolicy = null // 显式 workspace-write 策略（默认模式是 read-only，必须显式传入 fs.writeText）
+    function resolveSessionPolicy() {
+      try {
+        const root = resolveRootAgent()
+        const session = root && root.session
+        if (session && session.header && typeof session.header.cwd === 'string' && session.header.cwd) {
+          return sandboxPolicy.resolve({ mode: 'workspace-write', session })
+        }
+      } catch (e) { /* fallthrough */ }
+      return sandboxPolicy.resolve({ mode: 'workspace-write' })
+    }
     function resolveDataBaseDir() {
       // 1) 需求绑定目录（用户持久化目标，如 /workspace/dsh-task-panel）
       if (typeof lastWorkdir === 'string' && lastWorkdir.trim()) return lastWorkdir.trim()
-      // 2) 部署 workspaceRoot（旧位置，含历史数据）
+      // 2) 根会话项目区 / 部署 workspaceRoot（旧位置，含历史数据）
       try {
         const root = writePolicy && writePolicy.workspaceRoot ? writePolicy.workspaceRoot : (sandboxPolicy ? sandboxPolicy.workspaceRoot : null)
         if (root && typeof root === 'string') return root
@@ -181,7 +194,7 @@ return {
             persistDiag = 'fs=' + !!fs + ' sandboxPolicy=' + !!sandboxPolicy + '（fs 或 sandboxPolicy 不可用）'
             return null
           }
-          writePolicy = sandboxPolicy.resolve({ mode: 'workspace-write' })
+          writePolicy = resolveSessionPolicy()
           const base = resolveDataBaseDir()
           if (!base) {
             persistDiag = '数据目录解析为空（无 lastWorkdir / workspaceRoot）'
@@ -205,8 +218,9 @@ return {
       try {
         // 候选数据源（顺序探测，读到即用）：
         //   1) 用户指定的持久化目录（绑定目录所在项目，如 /workspace/dsh-task-panel）
-        //   2) 部署 workspaceRoot/.dsh-task-panel（旧位置）
-        //   3) 面板项目目录 <根agent cwd>/dsh-task-panel/.dsh-task-panel
+        //   2) 面板项目目录 <根agent cwd>/dsh-task-panel/.dsh-task-panel（bundle 时代面板数据位置）
+        //   3) 历史绑定目录 /workspace/dsh-task-panel（本机旧版数据，兼容迁移的安全网）
+        //   4) 部署 workspaceRoot/.dsh-task-panel（最旧位置）
         let text = null
         let fromOld = false
         const candidates = []
@@ -214,17 +228,18 @@ return {
         if (typeof lastWorkdir === 'string' && lastWorkdir.trim()) {
           candidates.push(lastWorkdir.trim() + '/.dsh-task-panel/requirements.json')
         }
-        candidates.push('/workspace/dsh-task-panel/.dsh-task-panel/requirements.json')
-        try {
-          const oldBase = writePolicy && writePolicy.workspaceRoot ? writePolicy.workspaceRoot : (sandboxPolicy ? sandboxPolicy.workspaceRoot : null)
-          if (oldBase) candidates.push(oldBase + '/.dsh-task-panel/requirements.json')
-        } catch (e) { /* noop */ }
         try {
           const root = resolveRootAgent()
           const rcwd = root && root.session && root.session.header ? root.session.header.cwd : null
           if (rcwd && typeof rcwd === 'string' && rcwd.length > 4) {
             candidates.push(rcwd + '/dsh-task-panel/.dsh-task-panel/requirements.json')
           }
+        } catch (e) { /* noop */ }
+        // 历史绑定目录（本机旧版数据；避免根会话 cwd 变化时读不到）
+        candidates.push('/workspace/dsh-task-panel/.dsh-task-panel/requirements.json')
+        try {
+          const oldBase = writePolicy && writePolicy.workspaceRoot ? writePolicy.workspaceRoot : (sandboxPolicy ? sandboxPolicy.workspaceRoot : null)
+          if (oldBase) candidates.push(oldBase + '/.dsh-task-panel/requirements.json')
         } catch (e) { /* noop */ }
         for (const cand of candidates) {
           try {
@@ -271,8 +286,21 @@ return {
           await fs.writeText(target, JSON.stringify({ requirements, backlog, execQueue, lastWorkdir }), undefined, undefined, writePolicy)
           persistDiag = 'written'
         } catch (e) {
-          persistDiag = 'write failed: ' + (e && e.message ? e.message : String(e))
-          console.error('persist failed', e)
+          // 兜底：绑定目录不可写（如 lastWorkdir 超出根会话 cwd）时，
+          // 回退写部署根（process.cwd()/.dsh-task-panel），保证持久化永不失效。
+          try {
+            const fallbackRoot = sandboxPolicy && sandboxPolicy.workspaceRoot ? sandboxPolicy.workspaceRoot : null
+            if (fallbackRoot) {
+              const fb = await fs.resolve(fallbackRoot + '/.dsh-task-panel/requirements.json')
+              await fs.writeText(fb, JSON.stringify({ requirements, backlog, execQueue, lastWorkdir }), undefined, undefined, sandboxPolicy.resolve({ mode: 'workspace-write' }))
+              persistDiag = 'written(fallback ' + fallbackRoot + ')'
+            } else {
+              persistDiag = 'write failed: ' + (e && e.message ? e.message : String(e))
+            }
+          } catch (e2) {
+            persistDiag = 'write failed: ' + (e && e.message ? e.message : String(e))
+            console.error('persist failed', e)
+          }
         }
       })()
       // 不让写盘失败影响主流程

@@ -91,7 +91,13 @@ const ctx = {
       writeText: async () => {},
       stat: async () => null,
     }
-    if (name === 'sandboxPolicy') return { workspaceRoot: '/tmp', resolve: () => ({ workspaceRoot: '/tmp' }) }
+    if (name === 'sandboxPolicy') return {
+      workspaceRoot: '/tmp',
+      // 与真实宿主一致：resolve 带 session 时用 session 的 cwd 作为 workspace 根
+      resolve: (req) => ({
+        workspaceRoot: (req && req.session && req.session.header && req.session.header.cwd) || '/tmp',
+      }),
+    }
     if (name === 'systemPrompt') return { section: (cb) => { promptSection = cb } }
     if (name === 'agentPresets') return { composeFrom: (childCtx, parentCtx) => 'default' }
     if (name === 'agentDefaultModel') return { currentSelection: () => ({ provider: 'deepseek', model: 'deepseek-chat' }) }
@@ -167,6 +173,12 @@ async function main() {
   console.log('\n[1] create →', a.id, '| stage =', a.stage, '| 要素 =', a.elements.map((e) => e.category).join(','), '| 验收 =', a.acceptanceCriteria.length)
   assert(a.stage === 'backlog', 'create 后应在 backlog')
   assert(a.elements.length >= 1 && a.acceptanceCriteria.length >= 1, '应自动拆解要素与验收')
+
+  // 1b. 持久化：写盘策略按根会话 cwd 解析（mock 根 agent cwd = /workspace），不应写失败
+  await sleep(50)
+  const sv0 = await rpc('state', {})
+  console.log('[1b] persistDiag =', sv0.persistDiag)
+  assert(!String(sv0.persistDiag || '').includes('write failed'), '持久化不应写失败（session 化策略根解析）')
 
   // 2. update 编辑
   a = await rpc('update', { id: a.id, title: '创建测试文件（已编辑）', description: '改后的描述' })
