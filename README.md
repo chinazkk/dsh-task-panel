@@ -5,7 +5,8 @@
 六列看板 + 双队列任务队列：需求提出/修改/删除 → 丢入执行队列 → 在**子 session** 中由 agent 串行完成任务 → 验收（**一句话产物** + **点击查看 agent 完整对话** + **验收反馈返工重入队列**）。
 
 > 设计依据：
-> - 架构文档：[`DeepSeek Harness 架构 + 需求面板三层设计`](https://chinazkk.cn/v1/oss/?path=17867249466595.html)
+> - 架构文档（本地化）：[`docs/architecture.html`](docs/architecture.html) —— DeepSeek Harness 架构 + 需求面板三层设计（含第四部分：当前实现 v14）
+> - 文件需求清单：[`.reference/cordis-plugin-file-requirements.md`](.reference/cordis-plugin-file-requirements.md)
 > - 前代实现参考：`dsh-requirements-2.1.0`（TypeScript bundle，见 `.reference/`）
 
 ---
@@ -60,7 +61,7 @@ cd dsh-task-panel
 # 2. 校验代码（语法 + 全流程模拟测试，均不依赖 DSH 运行时）
 npm install            # 仅安装本地脚本依赖（peer 依赖 @deepseek-ai/dsh、cordis 由宿主 DSH 提供）
 npm run check          # 语法校验 host + client
-npm test               # 16 项断言全流程模拟
+npm test               # 17 项断言全流程模拟
 
 # 3. 在 DSH 会话中注册运行（Host 半 = src/host.js 全文，Client 半 = src/client.js 全文）
 #    cordis_define(kind: existing, pluginId: 已有插件ID 或 kind: new 新建)
@@ -80,18 +81,19 @@ npm test               # 16 项断言全流程模拟
 
 ## 仓库完整性（源码即唯一来源）
 
-本仓库是运行中插件（`reqp-1` / 当前 `pkg-13`）的**唯一源码来源**：`src/host.js` 与 `src/client.js`
+本仓库是运行中插件（`reqp-1` / 当前 `pkg-14`）的**唯一源码来源**：`src/host.js` 与 `src/client.js`
 与插件 Host/Client 两半**逐字节一致**（每次改动都通过 `cordis_define` 重新定义并 `cordis_run` 加载，
 再从仓库直接提交）。仓库包含：
 
 | 内容 | 文件 | 说明 |
 | --- | --- | --- |
-| 项目清单 | `package.json` | 声明对 `@deepseek-ai/dsh` / `cordis` 的 peer 依赖 + 脚本 |
-| Host 半源码 | `src/host.js` | 数据模型/状态机/双队列/子 session 派发/8 工具/14 RPC/持久化 |
-| Client 半源码 | `src/client.js` | 六列看板 UI（固定高对比按钮 + 对话跳转） |
-| 逻辑测试 | `test/simulate-host.js` | 真实源码全流程模拟（16 项断言） |
+| 项目清单 | `package.json` | 声明对 `@deepseek-ai/dsh` / `cordis` 的 peer 依赖 + exports 映射 + 脚本 |
+| Host 半源码 | `src/host.js` | 数据模型/状态机/双队列/专用面板 agent/子 session 派发/8 工具/15 RPC/持久化/workdir 绑定 |
+| Client 半源码 | `src/client.js` | 六列看板 UI（固定高对比按钮 + 对话跳转 + 目录绑定表单） |
+| 逻辑测试 | `test/simulate-host.js` | 真实源码全流程模拟（17 项断言） |
 | 语法校验 | `scripts/check-syntax.js` | 校验两半源码可按沙箱方式解析 |
-| 参考材料 | `.reference/` | 架构文档 + 前代 2.1.0 实现 |
+| 架构文档 | `docs/architecture.html` | DeepSeek Harness 架构 + 需求面板三层设计（本地化，含第四部分 v14） |
+| 参考材料 | `.reference/` | 文件需求清单 + 前代 2.1.0 实现 |
 
 ```bash
 npm run check   # 语法校验（host + client）
@@ -117,11 +119,11 @@ npm test        # 状态机/双队列/验收全流程模拟测试
 
 ## Client RPC
 
-`state` / `get` / `conversation` / `create` / `update` / `remove` / `dispatch` / `recall` / `top` / `accept` / `rework`
+`state` / `get` / `conversation` / `create` / `update` / `remove` / `set-workdir` / `dispatch` / `recall` / `top` / `accept` / `rework` / `pause` / `stop` / `resume`（15 个 handler）
 
 ## 状态机
 
-`backlog`（需求队列）→ `queued`（执行队列）→ `executing`（子 agent 执行中）→ `accepting`（待验收池）→ `accepted`（验收完成）；验收失败自动 `rework` 重入执行队列。
+`backlog`（需求队列）→ `queued`（执行队列）→ `executing`（子 agent 执行中，可暂停/停止）→ `paused`（已暂停，可恢复）→ `accepting`（待验收池）→ `accepted`（验收完成）；验收失败自动 `rework` 重入执行队列。
 
 ## 开发
 
@@ -138,8 +140,15 @@ git push origin main
 dsh-task-panel/
 ├── README.md
 ├── .gitignore
+├── package.json       # 依赖清单（peerDeps + exports）
+├── docs/
+│   └── architecture.html   # 本地化架构文档（含第四部分 v14）
 ├── src/
-│   ├── host.js       # Host 半（数据/状态机/队列/工具/RPC）
-│   └── client.js     # Client 半（看板 UI）
-└── .reference/       # 参考文档（架构 HTML + 2.1.0 bundle）
+│   ├── host.js       # Host 半（数据/状态机/队列/面板 agent/工具/RPC）
+│   └── client.js     # Client 半（六列看板 UI）
+├── scripts/
+│   └── check-syntax.js
+├── test/
+│   └── simulate-host.js
+└── .reference/       # 参考材料（文件需求清单 + 2.1.0 bundle）
 ```
