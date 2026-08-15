@@ -86,11 +86,25 @@ return {
     }
 
     // ── 持久化（best effort：失败只告警，不阻断） ──
+    // 数据目录策略：优先需求绑定目录所在项目根（lastWorkdir 即用户指定的持久化目录，
+    // 例如 /workspace/dsh-task-panel），数据落在 <项目根>/.dsh-task-panel/requirements.json；
+    // lastWorkdir 未设置时回退 sandboxPolicy.workspaceRoot（旧位置，含历史数据可迁移）。
     let dataTarget = null
+    let dataBaseDir = null
     let dataTargetPromise = null
     let writePolicy = null // 显式 workspace-write 策略（默认模式是 read-only，必须显式传入 fs.writeText）
+    function resolveDataBaseDir() {
+      // 1) 需求绑定目录（用户持久化目标，如 /workspace/dsh-task-panel）
+      if (typeof lastWorkdir === 'string' && lastWorkdir.trim()) return lastWorkdir.trim()
+      // 2) 部署 workspaceRoot（旧位置，含历史数据）
+      try {
+        const root = writePolicy && writePolicy.workspaceRoot ? writePolicy.workspaceRoot : (sandboxPolicy ? sandboxPolicy.workspaceRoot : null)
+        if (root && typeof root === 'string') return root
+      } catch (e) { /* noop */ }
+      return null
+    }
     function resolveDataTarget() {
-      if (dataTarget) return Promise.resolve(dataTarget)
+      if (dataTarget && dataBaseDir === resolveDataBaseDir()) return Promise.resolve(dataTarget)
       if (dataTargetPromise) return dataTargetPromise
       dataTargetPromise = (async () => {
         try {
@@ -99,14 +113,15 @@ return {
             return null
           }
           writePolicy = sandboxPolicy.resolve({ mode: 'workspace-write' })
-          const root = writePolicy && writePolicy.workspaceRoot ? writePolicy.workspaceRoot : sandboxPolicy.workspaceRoot
-          if (!root || typeof root !== 'string') {
-            persistDiag = 'workspaceRoot 为空: ' + String(root)
+          const base = resolveDataBaseDir()
+          if (!base) {
+            persistDiag = '数据目录解析为空（无 lastWorkdir / workspaceRoot）'
             return null
           }
-          const target = await fs.resolve(root + '/.dsh-task-panel/requirements.json')
+          const target = await fs.resolve(base + '/.dsh-task-panel/requirements.json')
           dataTarget = target
-          persistDiag = 'ok -> ' + root + '/.dsh-task-panel/requirements.json'
+          dataBaseDir = base
+          persistDiag = 'ok -> ' + base + '/.dsh-task-panel/requirements.json'
           return target
         } catch (e) {
           persistDiag = 'resolve failed: ' + (e && e.message ? e.message : String(e))
@@ -119,18 +134,48 @@ return {
 
     async function loadState() {
       try {
-        const target = await resolveDataTarget()
-        if (!target) return
-        const text = await fs.readText(target)
-        if (!text) return
-        const parsed = JSON.parse(text)
-        if (!parsed || typeof parsed !== 'object') return
-        if (parsed.requirements && typeof parsed.requirements === 'object') {
-          for (const k of Object.keys(parsed.requirements)) requirements[k] = parsed.requirements[k]
+        // 候选数据源 1：旧位置（workspaceRoot）——含 lastWorkdir，用于迁移
+        let text = null
+        let fromOld = false
+        try {
+          const oldBase = writePolicy && writePolicy.workspaceRoot ? writePolicy.workspaceRoot : (sandboxPolicy ? sandboxPolicy.workspaceRoot : null)
+          if (oldBase) {
+            const oldTarget = await fs.resolve(oldBase + '/.dsh-task-panel/requirements.json')
+            try { text = await fs.readText(oldTarget) } catch (e) { /* 无旧数据 */ }
+          }
+        } catch (e) { /* noop */ }
+        // 候选数据源 2：当前目标（lastWorkdir 位置，数据已在新位置时）
+        if (!text) {
+          const cur = await resolveDataTarget()
+          if (cur) { try { text = await fs.readText(cur) } catch (e) { /* noop */ } }
         }
-        if (Array.isArray(parsed.backlog)) { backlog.length = 0; backlog.push(...parsed.backlog) }
-        if (Array.isArray(parsed.execQueue)) { execQueue.length = 0; execQueue.push(...parsed.execQueue) }
-        if (typeof parsed.lastWorkdir === 'string' && parsed.lastWorkdir) lastWorkdir = parsed.lastWorkdir
+        if (!text) return
+        // 解析 lastWorkdir → 更新内存 + 迁移到绑定目录根
+        let parsed
+        try { parsed = JSON.parse(text) } catch (e) { return }
+        if (parsed && typeof parsed.lastWorkdir === 'string' && parsed.lastWorkdir) {
+          lastWorkdir = parsed.lastWorkdir
+          if (lastWorkdir !== resolveDataBaseDir()) {
+            // lastWorkdir 已存在且目标变了 → 迁移到新位置
+            dataTarget = null
+            dataBaseDir = null
+            dataTargetPromise = null
+            const newTarget = await resolveDataTarget()
+            if (newTarget) {
+              try { await fs.writeText(newTarget, text, undefined, undefined, writePolicy); fromOld = true } catch (e) { /* noop */ }
+            }
+          }
+        }
+        // 载入最终数据（迁移后新位置；未迁移则原位置）
+        const finalText = fromOld ? text : (await fs.readText(await resolveDataTarget()))
+        const final = JSON.parse(finalText)
+        if (!final || typeof final !== 'object') return
+        if (final.requirements && typeof final.requirements === 'object') {
+          for (const k of Object.keys(final.requirements)) requirements[k] = final.requirements[k]
+        }
+        if (Array.isArray(final.backlog)) { backlog.length = 0; backlog.push(...final.backlog) }
+        if (Array.isArray(final.execQueue)) { execQueue.length = 0; execQueue.push(...final.execQueue) }
+        if (typeof final.lastWorkdir === 'string' && final.lastWorkdir) lastWorkdir = final.lastWorkdir
       } catch (e) { /* 首次运行没有数据 */ }
     }
 
