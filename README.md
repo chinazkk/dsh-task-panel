@@ -51,6 +51,8 @@
 
 本插件作为 DSH **动态 Cordis 插件**交付：通过 `cordis_define` / `cordis_run` 加载 Host + Client 两半。
 
+> 📖 **新会话启动插件**：完整步骤见 [`docs/INSTALL-GUIDE.md`](docs/INSTALL-GUIDE.md)（首次 define+run / 复用 / 升级 / 持久化 / 排障）。
+
 **从 Git 安装步骤**（`src/host.js` + `src/client.js` 即全部插件代码）：
 
 ```bash
@@ -91,9 +93,10 @@ npm test               # 18 项断言全流程模拟
 | 项目清单 | `package.json` | 声明对 `@deepseek-ai/dsh` / `cordis` 的 peer 依赖（零 dependencies/devDependencies）+ exports 映射 + 脚本 |
 | Host 半源码 | `src/host.js` | 数据模型/状态机/双队列/专用面板 agent/子 session 派发/8 工具/15 RPC/持久化/workdir 绑定 |
 | Client 半源码 | `src/client.js` | 六列看板 UI（固定高对比按钮 + 对话跳转 + 目录绑定表单） |
-| 逻辑测试 | `test/simulate-host.js` | 真实源码全流程模拟（18 项断言，含 AbortSignal 兜底回归） |
+| 逻辑测试 | `test/simulate-host.js` | 真实源码全流程模拟（19 项断言，含 AbortSignal 兜底回归 + 目录浏览） |
 | 语法校验 | `scripts/check-syntax.js` | 校验两半源码可按沙箱方式解析 |
 | 依赖审计 | `scripts/check-deps.js` | 校验外部 import/require 均已声明 + 输出 Host 服务清单 |
+| 启动指南 | `docs/INSTALL-GUIDE.md` | 新会话启动/复用/升级插件完整步骤 |
 | 依赖清单文档 | `docs/DEPENDENCIES.md` | 三层依赖说明：peer 依赖 / Host 服务 / Node 内置模块 |
 | 架构文档 | `docs/architecture.html` | DeepSeek Harness 架构 + 需求面板三层设计（本地化，含第四部分 v14） |
 | 参考材料 | `.reference/` | 文件需求清单 + 前代 2.1.0 实现 |
@@ -148,6 +151,7 @@ dsh-task-panel/
 ├── .gitignore
 ├── package.json       # 依赖清单（peerDeps + exports + 脚本）
 ├── docs/
+│   ├── INSTALL-GUIDE.md    # 新会话启动指南（define+run / 复用 / 升级）
 │   ├── architecture.html   # 本地化架构文档（含第四部分 v14）
 │   └── DEPENDENCIES.md     # 三层依赖清单（peer 依赖 / Host 服务 / Node 内置模块）
 ├── src/
