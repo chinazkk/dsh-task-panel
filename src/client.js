@@ -201,6 +201,7 @@ return {
         ),
         formReq ? h(RequirementForm, {
           req: formReq.mode === 'edit' && data ? data.requirements.find((x) => x.id === formReq.id) : null,
+          lastWorkdir: data ? data.lastWorkdir : null,
           onClose: () => setFormReq(null),
           onSaved: () => { setFormReq(null); refresh() },
           onToast: (m) => setToast(m),
@@ -280,6 +281,7 @@ return {
           h('span', null, req.id),
           h('span', null, '要素 ' + req.elementCount),
           h('span', null, '验收 ' + req.criterionCount),
+          req.workdir ? h('span', { title: '绑定工作目录', style: { color: 'var(--dsw-alias-label-secondary, #9297a5)', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, '📁 ' + req.workdir) : h('span', { style: { color: '#fbbf24' } }, '⚠ 未绑定目录'),
           req.reworkCount ? h('span', { style: { color: '#fbbf24' } }, '返工 ' + req.reworkCount) : null,
         ),
         (stage === 'accepting' || stage === 'accepted') && req.deliverable
@@ -294,17 +296,20 @@ return {
 
     // ── 新建 / 编辑表单 ──
     function RequirementForm(props) {
-      const { req, onClose, onSaved, onToast } = props
+      const { req, lastWorkdir, onClose, onSaved, onToast } = props
       const isEdit = !!req
       const [title, setTitle] = React.useState(req ? req.title : '')
       const [description, setDescription] = React.useState(req ? req.description : '')
       const [priority, setPriority] = React.useState(req ? req.priority : 'medium')
       const [scope, setScope] = React.useState(req ? (req.scope || []).join(', ') : '')
       const [command, setCommand] = React.useState(req ? req.command || '' : '')
+      // 工作目录：编辑沿用需求绑定；新建默认用上次绑定（无则空，提示绑定）
+      const [workdir, setWorkdir] = React.useState(req ? (req.workdir || '') : (lastWorkdir || ''))
       const [busy, setBusy] = React.useState(false)
 
       const save = () => {
         if (!title.trim()) { onToast('标题不能为空'); return }
+        if (!workdir.trim()) { onToast('请绑定工作目录（子 agent 将在此目录执行）'); return }
         setBusy(true)
         const args = {
           title: title.trim(),
@@ -312,6 +317,7 @@ return {
           priority,
           scope: scope.split(',').map((s) => s.trim()).filter(Boolean),
           command: command.trim() || null,
+          workdir: workdir.trim(),
         }
         const method = isEdit ? 'update' : 'create'
         if (isEdit) args.id = req.id
@@ -327,6 +333,11 @@ return {
       return h('div', { className: 'dtp-modal-backdrop', onClick: onClose },
         h('div', { className: 'dtp-modal', onClick: (e) => e.stopPropagation() },
           h('h2', null, isEdit ? '编辑需求 ' + req.id : '新建需求'),
+          !isEdit && !workdir
+            ? h('div', { className: 'dtp-field', style: { background: 'rgba(245,158,11,.12)', border: '1px solid rgba(245,158,11,.35)', borderRadius: 8, padding: '7px 10px', color: '#fbbf24', fontSize: 11 } },
+                '⚠ 尚未绑定工作目录，子 agent 执行时无法确定落盘位置，请填写下方「绑定工作目录」。',
+              )
+            : null,
           h('div', { className: 'dtp-field' },
             h('label', null, '标题 *'),
             h('input', { value: title, onChange: (e) => setTitle(e.target.value), placeholder: '一句话描述需求' }),
@@ -340,6 +351,10 @@ return {
             h('select', { value: priority, onChange: (e) => setPriority(e.target.value) },
               ['critical', 'high', 'medium', 'low'].map((p) => h('option', { key: p, value: p }, p)),
             ),
+          ),
+          h('div', { className: 'dtp-field' },
+            h('label', null, '绑定工作目录 *'),
+            h('input', { value: workdir, onChange: (e) => setWorkdir(e.target.value), placeholder: '如: /Users/xxx/project 或 ~/project（子 agent 在此目录执行）' }),
           ),
           h('div', { className: 'dtp-field' },
             h('label', null, '涉及范围（逗号分隔）'),

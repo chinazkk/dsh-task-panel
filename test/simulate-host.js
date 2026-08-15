@@ -48,20 +48,34 @@ const mockSubagents = {
 
 const mockAgents = {
   currentInitiator: () => null,
-  roots: () => [{ id: 'root-agent', session: { id: 'root-session', header: { cwd: '/workspace' } } }],
-  list: () => [{ id: 'root-agent', session: { id: 'root-session', header: { cwd: '/workspace' } } }],
-  // 面板专用 agent：独立 session + 独立 cwd
-  create: async (opts) => ({
-    agent: { id: 'panel-agent-' + opts.sessionId, session: { id: opts.sessionId, header: { cwd: opts.meta.cwd } } },
-    dispose: async () => {},
-  }),
+  roots: () => [{ id: 'root-agent', session: { id: 'root-session', header: { cwd: '/workspace' } }, ctx: {} }],
+  list: () => [{ id: 'root-agent', session: { id: 'root-session', header: { cwd: '/workspace' } }, ctx: {} }],
+  // 面板专用 agent：独立 session + 独立 cwd（setup 里 composeFrom 继承根装配）
+  create: async (opts) => {
+    const agent = {
+      id: 'panel-agent-' + opts.sessionId.slice(-6),
+      session: { id: opts.sessionId, header: { cwd: opts.meta.cwd } },
+      options: opts.agentOptions || {},
+      ctx: {},
+    }
+    if (typeof opts.setup === 'function') {
+      const commit = await opts.setup({})
+      if (commit && typeof commit.commit === 'function') commit.commit()
+    }
+    return { agent, dispose: async () => {} }
+  },
 }
 
 const listeners = {}
 const ctx = {
   subagents: mockSubagents,
   agents: mockAgents,
-  get: (name) => (name === 'sessionQuery' ? mockSessionQuery : undefined),
+  get: (name) => {
+    if (name === 'sessionQuery') return mockSessionQuery
+    if (name === 'agentPresets') return { composeFrom: (childCtx, parentCtx) => 'default' }
+    if (name === 'agentDefaultModel') return { currentSelection: () => ({ provider: 'deepseek', model: 'deepseek-chat' }) }
+    return undefined
+  },
   on: (ev, fn) => { (listeners[ev] = listeners[ev] || []).push(fn); return () => {} },
   effect: (fn) => { const d = fn(); return typeof d === 'function' ? d : () => {} },
 }
@@ -181,17 +195,25 @@ async function main() {
   console.log('[11] remove →', JSON.stringify(rm), '| 现存需求 =', st.requirements.map((x) => x.id).join(','))
   assert(rm.removed === true && st.requirements.every((x) => x.id !== c.id), '删除生效')
 
-  // 12. 执行器父级为当前会话根 agent，提示词钉死面板工作目录（不在别的项目下执行）
-  const f = await handlers.create({ title: '工作目录验证', description: '验证执行器工作目录钉死在 dsh-task-panel' })
+  // 12. 执行器父级为面板专用主 agent（独立 session），prompt 钉死需求绑定工作目录
+  const f = await handlers.create({ title: '工作目录验证', description: '验证执行器父级为面板 agent 且目录绑定生效', workdir: '/workspace/dsh-task-panel' })
   await handlers.dispatch({ id: f.id })
   await sleep(30)
   const fReq = startedReqs[startedReqs.length - 1]
-  console.log('[12] 执行器 parent =', fReq.parent.id, '| prompt 含工作目录 =', /dsh-task-panel/.test(fReq.prompt[0].text))
-  assert(fReq.parent && String(fReq.parent.id).length > 0, '执行器应有父 agent')
-  assert(/工作目录/.test(fReq.prompt[0].text) && /dsh-task-panel/.test(fReq.prompt[0].text), 'prompt 应指明面板专用工作目录')
+  console.log('[12] 执行器 parent =', fReq.parent.id, '| prompt 含绑定目录 =', /\/Users\/jekin\/workplace\/dsh-task-panel/.test(fReq.prompt[0].text))
+  assert(fReq.parent && String(fReq.parent.id).startsWith('panel-agent-'), '执行器父级应为面板专用 agent（panel-agent-*）')
+  assert(/工作目录/.test(fReq.prompt[0].text) && /\/Users\/jekin\/workplace\/dsh-task-panel/.test(fReq.prompt[0].text), 'prompt 应指明需求绑定的工作目录')
   pendingRuns.shift()() // F 完成
   await sleep(80)
   await handlers.remove({ id: f.id })
+
+  // 12b. workdir 绑定：新建需求不指定 workdir 时默认沿用上次绑定；state 暴露 lastWorkdir
+  const g0 = await handlers.create({ title: '目录默认值验证' })
+  console.log('[12b] 新建未指定目录 → workdir =', g0.workdir, '| lastWorkdir =', (await handlers.state()).lastWorkdir)
+  assert(g0.workdir === '/workspace/dsh-task-panel', '新建需求应默认沿用上次绑定目录')
+  const st0 = await handlers.state()
+  assert(st0.lastWorkdir === '/workspace/dsh-task-panel', 'state 应暴露 lastWorkdir')
+  await handlers.remove({ id: g0.id })
 
   // 13. 暂停：执行中 pause → 中断 → 已暂停（可恢复）
   const g = await handlers.create({ title: '暂停测试' })

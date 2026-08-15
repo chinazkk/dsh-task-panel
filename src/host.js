@@ -17,6 +17,8 @@ return {
     const sandboxPolicy = ctx.get('sandboxPolicy')
     const systemPrompt = ctx.get('systemPrompt')
     const timerService = ctx.get('timer')
+    const agentPresets = ctx.get('agentPresets')
+    const agentDefaultModel = ctx.get('agentDefaultModel')
 
     const MAX_REWORK = 5
     // 执行器不应使用面板管理工具（防止误调 complete_execution 等绕过队列元数据捕获）
@@ -53,6 +55,7 @@ return {
     const backlog = []
     const execQueue = []
     let seqCounter = 0
+    let lastWorkdir = null // 上次绑定的工作目录（新建需求时默认值）
 
     function nextId() {
       seqCounter += 1
@@ -104,6 +107,7 @@ return {
         }
         if (Array.isArray(parsed.backlog)) { backlog.length = 0; backlog.push(...parsed.backlog) }
         if (Array.isArray(parsed.execQueue)) { execQueue.length = 0; execQueue.push(...parsed.execQueue) }
+        if (typeof parsed.lastWorkdir === 'string' && parsed.lastWorkdir) lastWorkdir = parsed.lastWorkdir
       } catch (e) { /* 首次运行没有数据 */ }
     }
 
@@ -112,7 +116,7 @@ return {
         try {
           const target = await resolveDataTarget()
           if (!target) return
-          await fs.writeText(target, JSON.stringify({ requirements, backlog, execQueue }), undefined, undefined, writePolicy)
+          await fs.writeText(target, JSON.stringify({ requirements, backlog, execQueue, lastWorkdir }), undefined, undefined, writePolicy)
           persistDiag = 'written'
         } catch (e) {
           persistDiag = 'write failed: ' + (e && e.message ? e.message : String(e))
@@ -162,6 +166,8 @@ return {
         description: String(input.description || ''),
         priority: ['critical', 'high', 'medium', 'low'].includes(input.priority) ? input.priority : 'medium',
         stage: 'backlog',
+        // 需求绑定的工作目录（子 agent 在该目录下执行；未绑定则用面板默认目录）
+        workdir: typeof input.workdir === 'string' && input.workdir.trim() ? input.workdir.trim() : (lastWorkdir || null),
         elements,
         scope: (input.scope || []).slice(),
         dependencies: (input.dependencies || []).slice(),
@@ -177,6 +183,11 @@ return {
         version: 1,
         command: input.command ? String(input.command) : null,
       }
+      // 记住本次绑定的目录，下次新建默认沿用
+      if (req.workdir && req.workdir !== lastWorkdir) {
+        lastWorkdir = req.workdir
+        persistState()
+      }
       requirements[req.id] = req
       if (backlog.indexOf(req.id) < 0) backlog.push(req.id)
       persistState()
@@ -190,11 +201,15 @@ return {
     function update(id, patch) {
       const req = requirements[id]
       if (!req) throw new Error('需求不存在: ' + id)
-      const allowed = ['title', 'description', 'priority', 'scope', 'dependencies', 'command', 'acceptanceCriteria']
+      const allowed = ['title', 'description', 'priority', 'scope', 'dependencies', 'command', 'acceptanceCriteria', 'workdir']
       for (const k of allowed) {
         if (Object.prototype.hasOwnProperty.call(patch, k) && patch[k] !== undefined) req[k] = patch[k]
       }
       if (typeof req.title === 'string') req.title = req.title.trim()
+      if (typeof req.workdir === 'string' && req.workdir.trim()) {
+        req.workdir = req.workdir.trim()
+        if (req.workdir !== lastWorkdir) { lastWorkdir = req.workdir; persistState() }
+      }
       req.updatedAt = Date.now()
       req.version = (req.version || 0) + 1
       persistState()
@@ -345,11 +360,76 @@ return {
     const userStopped = new Set() // 被用户暂停/停止的需求 id
     const stopTargets = new Map() // 需求 id -> 'paused' | 'backlog'
 
-    function resolveParent() {
-      try { const init = agents.currentInitiator(); if (init) return init } catch (e) { /* noop */ }
+    // 当前会话的根 agent（作为面板专用 agent 的装配来源与兜底父级）
+    function resolveRootAgent() {
       try { const roots = agents.roots(); if (roots && roots.length) return roots[0] } catch (e) { /* noop */ }
       try { const list = agents.list(); if (list && list.length) return list[0] } catch (e) { /* noop */ }
+      try { const init = agents.currentInitiator(); if (init) return init } catch (e) { /* noop */ }
       return null
+    }
+
+    // ── 面板专用主 agent（懒创建，供所有执行器复用为父级） ──
+    // 之前裸 agents.create 的面板 agent 缺 {{model}} 等装配导致执行器起不来；
+    // 正解：创建时在 setup(agentCtx) 里调 agentPresets.composeFrom(agentCtx, 根agent.ctx)，
+    // 让面板 agent 继承根 agent 的完整装配（模型、工具、prompt 段落），同时拥有独立 session 与 cwd。
+    let panelAgent = null
+    let panelHandle = null
+    let panelDiag = 'not-created'
+    let panelCreating = null
+    async function ensurePanelAgent() {
+      if (panelAgent) return panelAgent
+      if (panelCreating) return panelCreating
+      const root = resolveRootAgent()
+      if (!root) { panelDiag = 'no-root-agent'; return null }
+      panelCreating = (async () => {
+        try {
+          // 面板专属工作目录：优先用最近绑定的需求目录所在项目，否则 <根agent cwd>/dsh-task-panel
+          const rootCwd = root.session && root.session.header ? root.session.header.cwd : null
+          const baseDir = rootCwd && typeof rootCwd === 'string' ? rootCwd : (sandboxPolicy ? sandboxPolicy.workspaceRoot : null)
+          const panelCwd = baseDir ? baseDir + '/dsh-task-panel' : null
+          // 继承根 agent 的模型选择，确保 {{model}} 有值
+          const agentOptions = {}
+          try {
+            const sel = agentDefaultModel ? agentDefaultModel.currentSelection() : null
+            if (sel) {
+              if (sel.provider) agentOptions.provider = sel.provider
+              if (sel.model) agentOptions.model = sel.model
+            }
+          } catch (e) { panelDiag = 'model:' + (e && e.message ? e.message : String(e)) }
+          const sessionId = 'dsh-task-panel-' + Date.now().toString(36) + '-' + Math.floor(Math.random() * 36).toString(36)
+          const handle = await agents.create({
+            sessionId,
+            meta: { cwd: panelCwd, origin: 'subagent', agentPreset: 'default' },
+            agentOptions,
+            // 关键：继承根 agent 的 standing composition（含 {{model}} 变量、工具、persona）
+            setup: (agentCtx) => {
+              if (agentPresets && typeof agentPresets.composeFrom === 'function') {
+                agentPresets.composeFrom(agentCtx, root.ctx)
+              }
+            },
+          })
+          panelHandle = handle
+          panelAgent = handle.agent
+          panelDiag = 'created ' + sessionId + ' cwd=' + (panelCwd || 'none') + ' model=' + (agentOptions.model || '-')
+          return panelAgent
+        } catch (e) {
+          panelDiag = 'create failed: ' + (e && e.message ? e.message : String(e))
+          console.error('ensurePanelAgent failed', e)
+          return null
+        } finally {
+          panelCreating = null
+        }
+      })()
+      return panelCreating
+    }
+
+    // 执行器父级：面板专用 agent（创建失败时兜底回根 agent，保证任务仍可执行）
+    async function resolveParent() {
+      try {
+        const panel = await ensurePanelAgent()
+        if (panel) return panel
+      } catch (e) { /* fallthrough */ }
+      return resolveRootAgent()
     }
 
     function resolveProvider() {
@@ -363,11 +443,11 @@ return {
     // ── 任务面板自有的专用执行目录（不在别的项目下跑子任务） ──
     async function resolvePanelExecDir() {
       try {
-        const parent = resolveParent()
+        const parent = await resolveParent()
         const sessionCwd = parent && parent.session && parent.session.header
           ? parent.session.header.cwd : null
         if (!sessionCwd || typeof sessionCwd !== 'string') return null
-        // 面板自己的项目目录：<会话工作区>/dsh-task-panel
+        // 面板自己的项目目录：<面板agent工作区>/dsh-task-panel
         const candidate = sessionCwd + '/dsh-task-panel'
         if (fs) {
           try {
@@ -403,9 +483,13 @@ return {
     }
 
     function buildPrompt(req, execDir) {
+      // 工作目录优先级：需求绑定 workdir > 面板默认执行目录
+      const workdir = (req.workdir && typeof req.workdir === 'string' && req.workdir.trim())
+        ? req.workdir.trim()
+        : (execDir || null)
       const lines = [
         '请执行需求 #' + req.id + '「' + req.title + '」。',
-        execDir ? '工作目录（请在此目录内完成所有文件操作）：' + execDir : '',
+        workdir ? '工作目录（请在此目录内完成所有文件操作，先 cd 到该目录）：' + workdir : '',
         req.description ? '描述：' + req.description : '',
         '优先级：' + req.priority,
         req.scope && req.scope.length ? '涉及范围：' + req.scope.join(', ') : '',
@@ -469,9 +553,9 @@ return {
       persistState()
       try {
         startExecution(id)
-        // 使用当前会话根 agent 作为执行器父级（裸创建的面板 agent 缺少完整装配，会导致执行器起不来/报 {{model}} 错）
-        // 通过提示词把工作目录钉死在任务面板自己的项目目录，避免在别的项目下执行
-        const parent = resolveParent()
+        // 使用面板专用主 agent 作为执行器父级（继承根 agent 完整装配：模型/工具/prompt 段落），
+        // 拥有独立 session 与工作目录；工作目录通过提示词钉在需求绑定目录/面板目录，避免在别的项目下执行
+        const parent = await resolveParent()
         const execDir = await resolvePanelExecDir()
         if (!parent || !subagents) {
           await completeExecution(id, '未挂载子 agent 执行能力，已跳过真实执行（状态流转到待验收）')
@@ -594,6 +678,7 @@ return {
         updatedAt: req.updatedAt,
         version: req.version,
         command: req.command || null,
+        workdir: req.workdir || null,
         // 验收产物：一句话摘要（最新一轮执行总结）
         deliverable: lastExec ? lastExec.summary : '',
         lastSessionId: lastExec ? lastExec.sessionId : null,
@@ -613,6 +698,7 @@ return {
         stage: r.stage,
         scope: r.scope,
         command: r.command,
+        workdir: r.workdir,
         reworkCount: r.reworkCount,
         reworkReason: r.reworkReason,
         deliverable: r.deliverable,
@@ -633,6 +719,8 @@ return {
         execQueue: execQueue.slice(),
         maxRework: MAX_REWORK,
         persistDiag,
+        lastWorkdir,
+        panelDiag,
       }
     }
 
@@ -674,6 +762,15 @@ return {
       return view(req.id)
     })
     handle('remove', async (a) => ({ removed: remove(a.id) }))
+    handle('set-workdir', async (a) => {
+      // 全局默认工作目录：新建需求未指定时沿用
+      if (typeof a.workdir === 'string' && a.workdir.trim()) {
+        lastWorkdir = a.workdir.trim()
+        persistState()
+        return { ok: true, lastWorkdir }
+      }
+      return { ok: false, lastWorkdir }
+    })
     handle('dispatch', async (a) => { dispatchToExec(a.id); return stateView() })
     handle('recall', async (a) => { recallFromExec(a.id); return stateView() })
     handle('top', async (a) => { moveExecTop(a.id); return stateView() })
@@ -724,7 +821,7 @@ return {
 
     registerTool(defineTool({
       name: 'propose_requirement',
-      description: '提出一个需求：自动拆解构成要素与验收要素，进入需求队列（backlog，不自动执行）。之后可用 dispatch_requirement 丢入执行队列。',
+      description: '提出一个需求：自动拆解构成要素与验收要素，进入需求队列（backlog，不自动执行）。之后可用 dispatch_requirement 丢入执行队列。可指定 workdir 绑定执行目录。',
       parameters: {
         type: 'object',
         properties: {
@@ -734,6 +831,7 @@ return {
           scope: { type: 'array', items: { type: 'string' }, description: '涉及模块/文件' },
           dependencies: { type: 'array', items: { type: 'string' }, description: '前置需求 ID' },
           command: { type: 'string', description: '可选：执行时运行的命令' },
+          workdir: { type: 'string', description: '可选：绑定执行工作目录（子 agent 在该目录完成文件操作）' },
         },
         required: ['title'],
       },
@@ -752,7 +850,7 @@ return {
 
     registerTool(defineTool({
       name: 'edit_requirement',
-      description: '编辑已存在需求的标题/描述/优先级/范围/命令。',
+      description: '编辑已存在需求的标题/描述/优先级/范围/命令/绑定工作目录。',
       parameters: {
         type: 'object',
         properties: {
@@ -762,6 +860,7 @@ return {
           priority: { type: 'string', enum: ['critical', 'high', 'medium', 'low'] },
           scope: { type: 'array', items: { type: 'string' } },
           command: { type: 'string' },
+          workdir: { type: 'string', description: '绑定工作目录' },
         },
         required: ['requirementId'],
       },
@@ -823,9 +922,9 @@ return {
         const sv = stateView()
         const all = sv.requirements
         const list = args.stage ? all.filter((r) => r.stage === args.stage) : all
-        if (!list.length) return '（无' + (args.stage || '任何阶段') + '需求）\n【存储】' + sv.persistDiag
-        return '【存储】' + sv.persistDiag + '\n' + list.map((r) => '-' + r.id + ' [' + r.priority + '] ' + r.title + '（' + r.stage +
-          (r.reworkCount ? '，返工' + r.reworkCount + '次' : '') + '）').join('\n')
+        if (!list.length) return '（无' + (args.stage || '任何阶段') + '需求）\n【存储】' + sv.persistDiag + '\n【面板agent】' + (sv.panelDiag || 'not-created')
+        return '【存储】' + sv.persistDiag + '\n【面板agent】' + (sv.panelDiag || 'not-created') + '\n' + list.map((r) => '-' + r.id + ' [' + r.priority + '] ' + r.title + '（' + r.stage +
+          (r.reworkCount ? '，返工' + r.reworkCount + '次' : '') + (r.workdir ? '，目录:' + r.workdir : '') + '）').join('\n')
       },
     }))
 
@@ -844,6 +943,7 @@ return {
         const lines = [
           '#' + r.id + '「' + r.title + '」 [' + r.priority + '] stage=' + r.stage,
           '描述：' + r.description,
+          '工作目录：' + (r.workdir || '（未绑定，用面板默认目录）'),
           '构成要素：' + r.elements.map((e) => e.description).join('；'),
           '验收要素：' + r.acceptanceCriteria.map((a) => '[' + a.id + '] ' + a.description).join('；'),
           '返工：' + r.reworkCount + ' 次' + (r.reworkReason ? '，原因：' + r.reworkReason : ''),
@@ -954,12 +1054,17 @@ return {
       void pump()
     })()
 
-    // ── 停止时清理：取消在途子 agent ──
+    // ── 停止时清理：取消在途子 agent + 释放面板专用 agent ──
     ctx.effect(() => () => {
       for (const run of runningRuns.values()) {
         try { run.dispose() } catch (e) { /* noop */ }
       }
       runningRuns.clear()
+      if (panelHandle) {
+        try { void panelHandle.dispose().catch(() => {}) } catch (e) { /* noop */ }
+        panelHandle = null
+        panelAgent = null
+      }
     })
   },
 }
