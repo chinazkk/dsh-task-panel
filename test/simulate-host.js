@@ -1,7 +1,8 @@
 // ─────────────────────────────────────────────────────────────
 // simulate-host.js · 用真实 src/host.js 源码 + mock 服务跑全流程
 // 验证：create/update/remove、双队列调度、子 agent 派发(pump)、
-//       一句话产物、对话 transcript、验收通过/返工、置顶/撤回。
+//       一句话产物、对话 transcript、验收通过/返工、置顶/撤回，
+//       以及 AbortSignal 兜底（未捕获信号时执行器仍能初始化，[17]）。
 // 运行：npm test（或 node test/simulate-host.js）
 // ─────────────────────────────────────────────────────────────
 import fs from 'node:fs'
@@ -264,6 +265,70 @@ async function main() {
   // 16. list 工具快照
   console.log('\n✅ 全部断言通过：状态机 + 双队列 + 子 session 派发 + 专用面板 session + 暂停/恢复/停止 全流程正常')
   console.log('注册工具列表:', registeredTools.join(', '))
+
+  // 17. 回归（#RQ-MSTX2QMA-2 返工原因）：未捕获 AbortSignal 时执行器初始化不再失败。
+  //     新插件实例不触发 agent/pre-step / tools/execute（AbortSignal 构造器保持未捕获），
+  //     派发后应通过「永不中断兜底信号」正常进入 executing（旧代码会报执行器初始化失败）。
+  const regListeners = {}
+  const regHandlers = {}
+  let regRunSeq = 0
+  const regPendingRuns = []
+  const regStartedReqs = []
+  const regCtx = {
+    subagents: {
+      list: () => ['fork'],
+      start: async (provider, request) => {
+        // 模拟 harness 对 signal 的消费契约：必须可 throwIfAborted（鸭子类型亦满足）
+        if (!request || !request.signal || typeof request.signal.throwIfAborted !== 'function') {
+          throw new Error('signal required')
+        }
+        request.signal.throwIfAborted()
+        regRunSeq++
+        regStartedReqs.push(request)
+        const rid = 'sess-fallback-' + regRunSeq
+        let resolveResult
+        const result = new Promise((res) => { resolveResult = res })
+        regPendingRuns.push(() => resolveResult({
+          output: [{ type: 'text', text: '完成：兜底信号执行成功（第 ' + regRunSeq + ' 轮）' }],
+          stopReason: 'completed',
+        }))
+        return { id: rid, result, dispose: async () => {} }
+      },
+    },
+    agents: mockAgents,
+    get: (name) => {
+      if (name === 'agentPresets') return { composeFrom: (childCtx, parentCtx) => 'default' }
+      if (name === 'agentDefaultModel') return { currentSelection: () => ({ provider: 'deepseek', model: 'deepseek-chat' }) }
+      return undefined
+    },
+    on: (ev, fn) => { (regListeners[ev] = regListeners[ev] || []).push(fn); return () => {} },
+    effect: (fn) => { const d = fn(); return typeof d === 'function' ? d : () => {} },
+  }
+  const regHarness = {
+    defineTool: (def) => def,
+    registerTool: (c, def) => { registeredTools.push(def.name); return () => {} },
+    handle: (method, fn) => { regHandlers[method] = fn; return () => {} },
+  }
+  const regSandbox = { harness: regHarness, ctx: regCtx, console }
+  vm.createContext(regSandbox)
+  const plugin2 = await vm.runInContext('(async () => {\n' + src + '\n})()', regSandbox)
+  plugin2.apply(regCtx)
+  // 关键：不触发任何 agent/pre-step / tools/execute → AbortSignal 构造器从未被捕获
+  assert(Object.keys(regListeners).length >= 1, '回归实例应注册事件监听器')
+  const rq = await regHandlers.create({ title: 'AbortSignal 兜底回归', description: '验证未捕获 AbortSignal 时执行器仍可初始化' })
+  await regHandlers.dispatch({ id: rq.id })
+  await sleep(30)
+  const rv = await regHandlers.get({ id: rq.id })
+  console.log('[17] 未捕获 AbortSignal → stage =', rv.stage, '| 产物 =', rv.deliverable)
+  assert(rv.stage === 'executing', '未捕获 AbortSignal 时应通过兜底信号正常初始化（不得报执行器初始化失败）')
+  assert(!/初始化失败/.test(rv.deliverable || ''), '不应出现「执行器初始化失败」')
+  const sig = regStartedReqs[0] && regStartedReqs[0].signal
+  assert(sig && sig.aborted === false && typeof sig.throwIfAborted === 'function', '派发给子 agent 的信号应满足 harness 消费契约')
+  regPendingRuns.shift()() // 兜底回归 run 结算
+  await sleep(80)
+  const rv2 = await regHandlers.get({ id: rq.id })
+  assert(rv2.stage === 'accepting' && /兜底信号/.test(rv2.deliverable), '兜底信号执行完成后正常进入待验收')
+  console.log('[17b] 兜底信号执行完成 → stage =', rv2.stage, '| 产物 =', rv2.deliverable)
 }
 
 main().catch((e) => { console.error('测试异常:', e); process.exit(1) })

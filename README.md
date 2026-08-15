@@ -58,10 +58,11 @@
 git clone git@github.com:chinazkk/dsh-task-panel.git
 cd dsh-task-panel
 
-# 2. 校验代码（语法 + 全流程模拟测试，均不依赖 DSH 运行时）
+# 2. 校验代码（语法 + 依赖审计 + 全流程模拟测试，均不依赖 DSH 运行时）
 npm install            # 仅安装本地脚本依赖（peer 依赖 @deepseek-ai/dsh、cordis 由宿主 DSH 提供）
-npm run check          # 语法校验 host + client
-npm test               # 17 项断言全流程模拟
+npm run check          # 语法校验 host + client + 依赖审计（未声明的外部依赖会报错）
+npm run check:deps     # 单独跑依赖审计（扫描 import/require + Host 服务清单）
+npm test               # 18 项断言全流程模拟
 
 # 3. 在 DSH 会话中注册运行（Host 半 = src/host.js 全文，Client 半 = src/client.js 全文）
 #    cordis_define(kind: existing, pluginId: 已有插件ID 或 kind: new 新建)
@@ -75,9 +76,9 @@ npm test               # 17 项断言全流程模拟
 > 就是插件的全部可部署代码，仓库即唯一源码来源，`cordis_define` 时整文件粘贴即可。
 > 若目标 DSH 已运行本插件（`reqp-1`），只需把新源码粘贴到新 Package 后 `cordis_run update`。
 
-- Host 依赖注入：`subagents`、`agents`（可选：`sessionQuery`、`fs`、`sandboxPolicy`、`systemPrompt`、`timer`）
-- Client 依赖注入：`timer`；入口为会话视图标签页 `conversation.view`（与「对话 / 轨迹」同级）
-- 沙箱适配：Host 沙箱无 `AbortController`，从 `agent/pre-step` / 工具 `exec.signal` 捕获 `AbortSignal` 构造器，以 `AbortSignal.any([])` 生成子 agent 信号。
+- Host 依赖注入：`subagents`、`agents` + `ctx.get('...')` 服务（`sessionQuery`、`fs`、`sandboxPolicy`、`systemPrompt`、`agentPresets`、`agentDefaultModel`）
+- Client 依赖注入：`slots`、`sessions`；入口为会话视图标签页 `conversation.view`（与「对话 / 轨迹」同级）
+- 沙箱适配：Host 沙箱无 `AbortController`，从 `agent/pre-step` / `tools/execute` 事件捕获 `AbortSignal` 构造器，以 `AbortSignal.any([])` 生成「永不中断」的子 agent 信号；捕获不到时回退到语义等价的鸭子类型信号——执行器初始化不再因缺 AbortSignal 失败（详见 `src/host.js` 的 `makeNeverAbortSignal`）。
 
 ## 仓库完整性（源码即唯一来源）
 
@@ -87,22 +88,27 @@ npm test               # 17 项断言全流程模拟
 
 | 内容 | 文件 | 说明 |
 | --- | --- | --- |
-| 项目清单 | `package.json` | 声明对 `@deepseek-ai/dsh` / `cordis` 的 peer 依赖 + exports 映射 + 脚本 |
+| 项目清单 | `package.json` | 声明对 `@deepseek-ai/dsh` / `cordis` 的 peer 依赖（零 dependencies/devDependencies）+ exports 映射 + 脚本 |
 | Host 半源码 | `src/host.js` | 数据模型/状态机/双队列/专用面板 agent/子 session 派发/8 工具/15 RPC/持久化/workdir 绑定 |
 | Client 半源码 | `src/client.js` | 六列看板 UI（固定高对比按钮 + 对话跳转 + 目录绑定表单） |
-| 逻辑测试 | `test/simulate-host.js` | 真实源码全流程模拟（17 项断言） |
+| 逻辑测试 | `test/simulate-host.js` | 真实源码全流程模拟（18 项断言，含 AbortSignal 兜底回归） |
 | 语法校验 | `scripts/check-syntax.js` | 校验两半源码可按沙箱方式解析 |
+| 依赖审计 | `scripts/check-deps.js` | 校验外部 import/require 均已声明 + 输出 Host 服务清单 |
+| 依赖清单文档 | `docs/DEPENDENCIES.md` | 三层依赖说明：peer 依赖 / Host 服务 / Node 内置模块 |
 | 架构文档 | `docs/architecture.html` | DeepSeek Harness 架构 + 需求面板三层设计（本地化，含第四部分 v14） |
 | 参考材料 | `.reference/` | 文件需求清单 + 前代 2.1.0 实现 |
 
 ```bash
-npm run check   # 语法校验（host + client）
-npm test        # 状态机/双队列/验收全流程模拟测试
+npm run check       # 语法校验（host + client）+ 依赖审计
+npm run check:deps  # 依赖审计（外部说明符声明检查 + Host 服务清单）
+npm test            # 状态机/双队列/验收全流程模拟测试
 ```
 
 > 依赖说明：插件运行时消费 DSH 提供的服务（`subagents` / `agents` / `sessionQuery` / `fs` /
-> `sandboxPolicy` / `systemPrompt` / `timer` 等），这些由宿主 harness 提供，**不随本仓库打包**；
-> `package.json` 的 `peerDependencies` 显式声明了这份依赖关系，保证仓库可复现。
+> `sandboxPolicy` / `systemPrompt` / `agentPresets` / `agentDefaultModel` 等），这些由宿主
+> harness 提供，**不随本仓库打包**；`package.json` 的 `peerDependencies` 显式声明了这份
+> 依赖关系，保证仓库可复现。完整三层依赖清单见 [`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md)，
+> 并用 `npm run check:deps` 自动核对声明与源码消费一致。
 
 ## Agent 工具（8 个）
 
@@ -140,14 +146,16 @@ git push origin main
 dsh-task-panel/
 ├── README.md
 ├── .gitignore
-├── package.json       # 依赖清单（peerDeps + exports）
+├── package.json       # 依赖清单（peerDeps + exports + 脚本）
 ├── docs/
-│   └── architecture.html   # 本地化架构文档（含第四部分 v14）
+│   ├── architecture.html   # 本地化架构文档（含第四部分 v14）
+│   └── DEPENDENCIES.md     # 三层依赖清单（peer 依赖 / Host 服务 / Node 内置模块）
 ├── src/
 │   ├── host.js       # Host 半（数据/状态机/队列/面板 agent/工具/RPC）
 │   └── client.js     # Client 半（六列看板 UI）
 ├── scripts/
-│   └── check-syntax.js
+│   ├── check-syntax.js   # 语法校验
+│   └── check-deps.js     # 依赖审计（外部说明符声明检查 + Host 服务清单）
 ├── test/
 │   └── simulate-host.js
 └── .reference/       # 参考材料（文件需求清单 + 2.1.0 bundle）

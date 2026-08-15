@@ -16,7 +16,6 @@ return {
     const fs = ctx.get('fs')
     const sandboxPolicy = ctx.get('sandboxPolicy')
     const systemPrompt = ctx.get('systemPrompt')
-    const timerService = ctx.get('timer')
     const agentPresets = ctx.get('agentPresets')
     const agentDefaultModel = ctx.get('agentDefaultModel')
 
@@ -32,6 +31,8 @@ return {
     let persistDiag = 'ok'
 
     // ── 沙箱没有 AbortController，从真实事件捕获 AbortSignal 构造器 ──
+    // agent/pre-step（每步）与 tools/execute（每次工具调用）都携带当前 step 的中止信号，
+    // 从信号对象取出其构造器，用于生成「永不中断」的子 agent 信号。
     let AbortSignalCtor = null
     function captureSignalCtor(signal) {
       if (!AbortSignalCtor && signal && typeof signal === 'object' && signal.constructor) {
@@ -42,12 +43,34 @@ return {
       try { if (payload && payload.signal) captureSignalCtor(payload.signal) } catch (e) { /* noop */ }
       return next()
     })
-    // 永不中断的信号：子 agent 跑完整轮，不因触发它的某个 step 结束而被取消
-    function freshSignal() {
+    ctx.on('tools/execute', (exec, next) => {
+      try { if (exec && exec.signal) captureSignalCtor(exec.signal) } catch (e) { /* noop */ }
+      return next()
+    })
+    // 永不中断的信号：子 agent 跑完整轮，不因触发它的某个 step 结束而被取消。
+    // 三级兜底，保证执行器初始化永远拿得到信号（不再报「未捕获到 AbortSignal」）：
+    //   1) 已捕获的真实 AbortSignal 构造器 → AbortSignal.any([])（永不中止）
+    //   2) 全局 AbortSignal（宿主 Node 20+ 直接可用时）
+    //   3) 鸭子类型永不中断信号：与 AbortSignal.any([]) 语义等价（永不 aborted），
+    //      harness 仅消费 aborted/reason/throwIfAborted/addEventListener/removeEventListener
+    function makeNeverAbortSignal() {
       if (AbortSignalCtor && typeof AbortSignalCtor.any === 'function') {
         try { return AbortSignalCtor.any([]) } catch (e) { /* fallthrough */ }
       }
-      return undefined
+      try {
+        const g = typeof globalThis !== 'undefined' ? globalThis : null
+        if (g && typeof g.AbortSignal === 'function' && typeof g.AbortSignal.any === 'function') {
+          return g.AbortSignal.any([])
+        }
+      } catch (e) { /* fallthrough */ }
+      return {
+        aborted: false,
+        reason: undefined,
+        throwIfAborted() {},
+        addEventListener() {},
+        removeEventListener() {},
+        dispatchEvent() { return true },
+      }
     }
 
     // ── 内存态（Fork/Resume 通过 fs 尽力持久化） ──
@@ -563,20 +586,9 @@ return {
           void pump()
           return
         }
-        // 等待 AbortSignal 构造器可用（agent/pre-step 每步都会捕获）
-        let signal = freshSignal()
-        let tries = 0
-        while (!signal && timerService && tries < 20) {
-          try { await timerService.timeout(400) } catch (e) { /* noop */ }
-          signal = freshSignal()
-          tries++
-        }
-        if (!signal) {
-          await completeExecution(id, '执行器初始化失败：未捕获到 AbortSignal，请再派发一次')
-          busy = false
-          void pump()
-          return
-        }
+        // 永不中断的信号：优先真实 AbortSignal（agent/pre-step / tools/execute 已捕获），
+        // 捕获不到时回退鸭子类型信号——执行器初始化不再因缺 AbortSignal 而失败。
+        const signal = makeNeverAbortSignal()
         const provider = resolveProvider()
         const run = await subagents.start(provider, {
           label: '执行 ' + id + ' ' + req.title,
