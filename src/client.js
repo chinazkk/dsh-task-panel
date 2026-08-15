@@ -4,6 +4,9 @@
 //   · 新增 / 编辑 / 删除需求
 //   · 丢执行 / 置顶 / 撤回
 //   · 验收：一句话产物 + 查看对话（跳转真实子代理会话）+ 通过/返工反馈
+//   · 执行中：实时进度预览 + 查看进度弹窗（实时对话流 + 一键进入子代理会话）
+//   · 工作目录：目录选择器（browse 浏览 / native 系统选择器）
+//   · 验收完成产物默认收起（点击展开）
 // 入口：与「对话 / 轨迹」同级的会话视图标签页（conversation.view）。
 // 样式：主题令牌（--dsw-alias-*）+ 精致卡片/列/按钮/弹窗；
 //       按钮使用固定高对比配色（不依赖主题变量，任何主题下都清晰）。
@@ -270,11 +273,15 @@ return {
     function Card(props) {
       const { req, stage, progress, onEdit, onDelete, onDispatch, onRecall, onTop, onAccept, onRework, onPause, onStop, onResume, onConv, onShowProgress } = props
       const [confirmDel, setConfirmDel] = React.useState(false)
+      const [deliverableOpen, setDeliverableOpen] = React.useState(stage !== 'accepted')
       React.useEffect(() => {
         if (!confirmDel) return
         const disposer = ctx.timeout(() => setConfirmDel(false), 2500)
         return () => { if (typeof disposer === 'function') disposer() }
       }, [confirmDel])
+      React.useEffect(() => {
+        setDeliverableOpen(stage !== 'accepted')
+      }, [stage])
 
       const delBtn = h('button', { className: 'dtp-btn small danger', onClick: () => { if (confirmDel) { setConfirmDel(false); onDelete() } else setConfirmDel(true) } }, confirmDel ? '确认删除?' : '删除')
 
@@ -320,12 +327,6 @@ return {
       }
 
       const pri = String(req.priority || 'medium')
-
-      // 验收完成默认收起产物（点击展开）；待验收保持展开便于评审
-      const [deliverableOpen, setDeliverableOpen] = React.useState(stage !== 'accepted')
-      React.useEffect(() => {
-        setDeliverableOpen(stage !== 'accepted')
-      }, [stage])
 
       // 执行中实时进度预览（最近 3 条）
       let progressBlock = null
