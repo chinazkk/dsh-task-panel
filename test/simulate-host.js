@@ -14,6 +14,8 @@ import fs from 'node:fs'
 import vm from 'node:vm'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import * as React from 'react'
+import * as ReactDOMServer from 'react-dom/server'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.join(__dirname, '..')
@@ -306,6 +308,12 @@ async function main() {
   const clientSrc = fs.readFileSync(path.join(repoRoot, 'lib', 'client.js'), 'utf8')
   assert(clientSrc.includes('window.__ModuleLoader__.load({'), 'client bundle 应以 __ModuleLoader__.load 注册')
   assert(clientSrc.includes('"dsh-task-panel"'), 'client bundle 应携带插件 id dsh-task-panel')
+  // 回归防护：应用级 client 上下文没有 ctx.interval/ctx.timeout（动态运行器才提供），
+  // 用了会导致 useEffect 抛错 → 面板空白。bundle 必须用浏览器原生定时器。
+  assert(!clientSrc.includes('ctx.interval(') && !clientSrc.includes('ctx.timeout('),
+    'client bundle 不得调用 ctx.interval/ctx.timeout（应用级上下文无 timer，会导致面板空白）')
+  assert(clientSrc.includes('setInterval(') && clientSrc.includes('setTimeout('),
+    'client bundle 应使用浏览器原生 setInterval/setTimeout 轮询')
   let handoff = null
   const sandbox = {
     window: { __ModuleLoader__: { load: (h) => { handoff = h } } },
@@ -319,7 +327,7 @@ async function main() {
   vm.runInContext(clientSrc, sandbox)
   assert(handoff && handoff.id === 'dsh-task-panel', 'client bundle 应触发 handoff（id=dsh-task-panel）')
   const clientMod = handoff.factory((spec) => {
-    if (spec === 'react' || spec === 'react/jsx-runtime') return { createElement: () => ({}) }
+    if (spec === 'react' || spec === 'react/jsx-runtime') return React
     if (spec === '@deepseek-ai/cordis') return {}
     return {}
   })
@@ -344,6 +352,12 @@ async function main() {
   const viewEntry = injectedSlot.cb()
   assert(viewEntry && registeredSlot && registeredSlot.options.id === 'dsh-task-panel' && registeredSlot.options.label === '任务面板', '槽位注册应为「任务面板」标签页')
   console.log('✅ client apply → 注册「任务面板」会话标签页（order=' + registeredSlot.options.order + '）')
+
+  // 真实渲染回归：TaskPanel 必须能渲染出内容（防止应用级上下文缺 timer 等导致的空白面板）
+  const html = ReactDOMServer.renderToString(React.createElement(registeredSlot.component))
+  console.log('✅ 真实渲染 →', html.length, '字符 | 含标题:', html.includes('任务面板'), '| 含看板:', html.includes('dtp-board'))
+  assert(html.includes('任务面板') && html.includes('dtp-root') && html.includes('dtp-board'),
+    'TaskPanel 应渲染出面板内容（非空白）；空白通常是 useEffect 里调用应用级上下文不存在的服务（如 ctx.interval）导致')
 
   console.log('\n✅✅ 全部断言通过：bundle 形态 host + client 冒烟测试通过')
 }

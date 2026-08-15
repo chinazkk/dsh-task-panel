@@ -42,13 +42,18 @@ const plugin = (() => {
 
 return {
   // 注意：不要声明未使用的 inject 服务——应用级 client 运行时没有 'timer' 服务，
-  // 多余声明会让插件永久停在 PENDING（面板标签不出现）。轮询由 slots 订阅驱动。
+  // 多余声明会让插件永久停在 PENDING（面板标签不出现）。
   inject: [],
   apply(ctx) {
     const slots = ctx.get('slots')
     if (!slots) return
     const sessions = ctx.get('sessions')
     const h = React.createElement
+
+    // 定时器：应用级 client 上下文没有 ctx.interval/ctx.timeout（那是动态运行器的
+    // timer mixin），bundle 直接用浏览器原生 setInterval/setTimeout 并返回清理函数。
+    const interval = (fn, ms) => { const id = setInterval(fn, ms); return () => clearInterval(id) }
+    const timeout = (fn, ms) => { const id = setTimeout(fn, ms); return () => clearTimeout(id) }
 
     styles.insert(`
       .dtp-root { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--dsw-alias-bg-base, #0f1115); }
@@ -144,7 +149,7 @@ return {
       }, [])
       React.useEffect(() => {
         refresh()
-        const disposer = ctx.interval(() => refresh(), 1500)
+        const disposer = interval(() => refresh(), 1500)
         return () => { if (typeof disposer === 'function') disposer() }
       }, [refresh])
       return [data, refresh]
@@ -158,7 +163,7 @@ return {
           host.call('progress').then((list) => { if (Array.isArray(list)) setProgress(list) }).catch(() => {})
         }
         load()
-        const disposer = ctx.interval(() => load(), 1500)
+        const disposer = interval(() => load(), 1500)
         return () => { if (typeof disposer === 'function') disposer() }
       }, [])
       return progress
@@ -197,7 +202,7 @@ return {
 
       React.useEffect(() => {
         if (!toast) return
-        const disposer = ctx.timeout(() => setToast(null), 2600)
+        const disposer = timeout(() => setToast(null), 2600)
         return () => { if (typeof disposer === 'function') disposer() }
       }, [toast])
 
@@ -306,7 +311,7 @@ return {
       const [deliverableOpen, setDeliverableOpen] = React.useState(stage !== 'accepted')
       React.useEffect(() => {
         if (!confirmDel) return
-        const disposer = ctx.timeout(() => setConfirmDel(false), 2500)
+        const disposer = timeout(() => setConfirmDel(false), 2500)
         return () => { if (typeof disposer === 'function') disposer() }
       }, [confirmDel])
       React.useEffect(() => {
@@ -653,13 +658,13 @@ return {
           }).catch(() => {})
         }
         load()
-        const disposer = ctx.interval(() => load(), 1500)
+        const disposer = interval(() => load(), 1500)
         return () => { cancelled = true; if (typeof disposer === 'function') disposer() }
       }, [req.id])
 
       React.useEffect(() => {
         if (detail && detail.sessionId) {
-          const t = ctx.interval(() => setElapsed(Date.now()), 1000)
+          const t = interval(() => setElapsed(Date.now()), 1000)
           return () => { if (typeof t === 'function') t() }
         }
       }, [detail && detail.sessionId])
