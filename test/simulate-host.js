@@ -123,6 +123,14 @@ async function main() {
   console.log('[3] dispatch 后 stage =', a.stage)
   assert(a.stage === 'executing', '子 agent 执行中')
   assert(pendingRuns.length === 1, '应派发一个子 agent')
+  assert(a.lastSessionId === 'sess-mock-1', '执行启动后应立即回填会话 id（执行中可追踪）')
+
+  // 5b. 实时进度：executing 时 progress RPC 返回会话 id / 父会话 id / 最近对话
+  const prog = await handlers.progress({})
+  const p0 = prog.find((p) => p.id === a.id)
+  console.log('[3b] progress →', JSON.stringify(p0 ? { id: p0.id, sessionId: p0.sessionId, parentSessionId: p0.parentSessionId, recent: p0.recent.length } : null))
+  assert(p0 && p0.sessionId === 'sess-mock-1', 'progress 应返回执行中会话 id')
+  assert(p0 && p0.recent.length >= 1, 'progress 应返回最近对话片段')
 
   // 6. 完成执行 → accepting + 一句话产物 + transcript
   pendingRuns.shift()()

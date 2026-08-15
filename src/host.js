@@ -586,6 +586,13 @@ return {
           toolFilter: { deny: EXEC_DENY_TOOLS },
         })
         runningRuns.set(id, run)
+        // 启动后立即回填会话 id（执行中即可实时追踪进度 / 跳转子代理会话）
+        const curExec = req.executions[req.executions.length - 1]
+        if (curExec && !curExec.sessionId) {
+          curExec.sessionId = run && run.id ? run.id : null
+          curExec.parentSessionId = parent && parent.session ? parent.session.id : null
+          persistState()
+        }
         let result
         try {
           result = await run.result
@@ -737,21 +744,46 @@ return {
 
     handle('state', async () => stateView())
     handle('get', async (a) => view(a.id))
+    handle('progress', async (a) => {
+      // 实时执行进度：返回所有 executing 需求的最新会话 id / 父会话 id / 工作目录 / 最近对话片段
+      const out = []
+      for (const k of Object.keys(requirements)) {
+        const r = requirements[k]
+        if (r.stage !== 'executing') continue
+        const exec = (r.executions || [])[r.executions.length - 1] || null
+        const sessionId = exec && exec.sessionId ? exec.sessionId : null
+        const parentSessionId = exec && exec.parentSessionId ? exec.parentSessionId : null
+        let recent = []
+        if (sessionId) recent = await captureTranscript(sessionId)
+        out.push({
+          id: r.id,
+          title: r.title,
+          workdir: r.workdir || null,
+          sessionId,
+          parentSessionId,
+          startedAt: exec ? exec.startedAt : 0,
+          elapsedMs: exec ? (Date.now() - exec.startedAt) : 0,
+          recent: Array.isArray(recent) ? recent.slice(-8) : [],
+        })
+      }
+      return out
+    })
     handle('conversation', async (a) => {
       // 按需读取子 agent 会话的完整对话（若 transcript 已在执行记录中则直接返回）
       const r = view(a.id)
       if (!r) return null
       const exec = (r.executions || []).find((e) => e.sessionId === a.sessionId) || r.executions[r.executions.length - 1]
+      const parentSessionId = exec && exec.parentSessionId ? exec.parentSessionId : null
       if (exec && Array.isArray(exec.transcript) && exec.transcript.length) {
-        return { sessionId: exec.sessionId, transcript: exec.transcript }
+        return { sessionId: exec.sessionId, parentSessionId, transcript: exec.transcript }
       }
       if (exec && exec.sessionId && sessionQuery) {
         const transcript = await captureTranscript(exec.sessionId)
         exec.transcript = transcript
         persistState()
-        return { sessionId: exec.sessionId, transcript }
+        return { sessionId: exec.sessionId, parentSessionId, transcript }
       }
-      return { sessionId: null, transcript: [] }
+      return { sessionId: null, parentSessionId: null, transcript: [] }
     })
     handle('create', async (a) => {
       const req = create(a)
