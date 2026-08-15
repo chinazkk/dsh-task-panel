@@ -51,13 +51,14 @@ Host 半 `inject: ['subagents', 'agents', 'tools']`，另用 `ctx.get()` 探测�
 
 ## 3. Client 服务（宿主注入）
 
-Client 半 `inject: ['slots', 'sessions', 'timer']`：
+Client 半 `inject: ['slots', 'sessions']`：
 
 | 服务 | 用途 |
 | --- | --- |
 | `slots` | 会话视图标签页注册（`slots.inject('conversation.view', …)` + `slots.register`） |
 | `sessions` | 「查看对话」跳转真实子代理会话（`sessions.openSubagent`） |
-| `timer` | Client 轮询定时器 |
+
+> 注意：不要声明未使用的 inject 服务（如 `timer`）——应用级 client 运行时没有 `timer` 服务，多余声明会让插件停在 PENDING。
 
 ## 4. 构建期（仅本地开发/发布）
 

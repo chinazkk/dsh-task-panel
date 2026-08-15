@@ -41,7 +41,9 @@ const plugin = (() => {
 // ─────────────────────────────────────────────────────────────
 
 return {
-  inject: ['timer'],
+  // 注意：不要声明未使用的 inject 服务——应用级 client 运行时没有 'timer' 服务，
+  // 多余声明会让插件永久停在 PENDING（面板标签不出现）。轮询由 slots 订阅驱动。
+  inject: [],
   apply(ctx) {
     const slots = ctx.get('slots')
     if (!slots) return
