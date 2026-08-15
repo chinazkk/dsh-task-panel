@@ -135,20 +135,35 @@ return {
 
     async function loadState() {
       try {
-        // 候选数据源 1：旧位置（workspaceRoot）——含 lastWorkdir，用于迁移
+        // 候选数据源（顺序探测，读到即用）：
+        //   1) 用户指定的持久化目录（绑定目录所在项目，如 /workspace/dsh-task-panel）
+        //   2) 部署 workspaceRoot/.dsh-task-panel（旧位置）
+        //   3) 面板项目目录 <根agent cwd>/dsh-task-panel/.dsh-task-panel
         let text = null
         let fromOld = false
+        const candidates = []
+        // 优先：用户明确指定的持久化目录（需求绑定目录根，代码内可配置）
+        if (typeof lastWorkdir === 'string' && lastWorkdir.trim()) {
+          candidates.push(lastWorkdir.trim() + '/.dsh-task-panel/requirements.json')
+        }
+        candidates.push('/workspace/dsh-task-panel/.dsh-task-panel/requirements.json')
         try {
           const oldBase = writePolicy && writePolicy.workspaceRoot ? writePolicy.workspaceRoot : (sandboxPolicy ? sandboxPolicy.workspaceRoot : null)
-          if (oldBase) {
-            const oldTarget = await fs.resolve(oldBase + '/.dsh-task-panel/requirements.json')
-            try { text = await fs.readText(oldTarget) } catch (e) { /* 无旧数据 */ }
+          if (oldBase) candidates.push(oldBase + '/.dsh-task-panel/requirements.json')
+        } catch (e) { /* noop */ }
+        try {
+          const root = resolveRootAgent()
+          const rcwd = root && root.session && root.session.header ? root.session.header.cwd : null
+          if (rcwd && typeof rcwd === 'string' && rcwd.length > 4) {
+            candidates.push(rcwd + '/dsh-task-panel/.dsh-task-panel/requirements.json')
           }
         } catch (e) { /* noop */ }
-        // 候选数据源 2：当前目标（lastWorkdir 位置，数据已在新位置时）
-        if (!text) {
-          const cur = await resolveDataTarget()
-          if (cur) { try { text = await fs.readText(cur) } catch (e) { /* noop */ } }
+        for (const cand of candidates) {
+          try {
+            const t = await fs.resolve(cand)
+            text = await fs.readText(t)
+            if (text) break
+          } catch (e) { /* 该候选无数据 */ }
         }
         if (!text) return
         // 解析 lastWorkdir → 更新内存 + 迁移到绑定目录根
