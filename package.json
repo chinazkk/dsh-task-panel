@@ -1,26 +1,60 @@
 {
   "name": "dsh-task-panel",
   "version": "1.0.0",
-  "description": "DeepSeek Harness 任务面板动态 Cordis 插件：需求面板 + 需求/执行双队列 + 专用面板主 agent 子 session 串行执行 + 验收（一句话产物 / 跳转真实子代理对话 / 返工反馈 / 暂停停止恢复）+ 需求绑定工作目录。",
+  "description": "DeepSeek Harness 任务面板插件（DSH bundle 形态）：六列看板 + 需求/执行双队列 + 子 session 串行执行 + 验收（一句话产物 / 跳转真实子代理对话 / 返工反馈 / 暂停停止恢复）+ 需求绑定工作目录。Host + Client 双半，`dsh plugin add` 即装即用。",
   "license": "MIT",
-  "private": true,
   "type": "module",
-  "main": "src/host.js",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "src",
+    "cordis.patch.yml",
+    "tsconfig.json",
+    "tsconfig.client.json",
+    "tsdown.config.ts",
+    "README.md",
+    "test"
+  ],
   "scripts": {
-    "check": "node scripts/check-syntax.js && node scripts/check-deps.js",
-    "check:deps": "node scripts/check-deps.js",
-    "test": "node test/simulate-host.js"
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.client.json && tsdown",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit",
+    "test": "node test/simulate-host.js",
+    "check": "npm run build && npm test"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh": ">=1.0.0",
-    "cordis": ">=0.0.0"
+    "@deepseek-ai/cordis": ">=0.1.0",
+    "@deepseek-ai/dsh-tools": ">=0.1.0",
+    "@deepseek-ai/dsh-client-runtime": ">=0.1.0",
+    "react": ">=18.0.0"
   },
-  "devDependencies": {},
+  "dsh": {
+    "bundle": {
+      "patch": "cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime"
+      ],
+      "platform": "web"
+    }
+  },
   "keywords": [
     "deepseek-harness",
     "dsh",
     "cordis",
-    "dynamic-plugin",
+    "bundle",
     "task-panel",
     "requirements",
     "kanban",
@@ -30,12 +64,6 @@
   "engines": {
     "node": ">=18"
   },
-  "files": [
-    "src/",
-    "test/",
-    "scripts/",
-    "README.md"
-  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/chinazkk/dsh-task-panel.git"
@@ -43,11 +71,5 @@
   "bugs": {
     "url": "https://github.com/chinazkk/dsh-task-panel/issues"
   },
-  "homepage": "https://github.com/chinazkk/dsh-task-panel#readme",
-  "exports": {
-    ".": "./src/host.js",
-    "./host": "./src/host.js",
-    "./client": "./src/client.js",
-    "./package.json": "./package.json"
-  }
+  "homepage": "https://github.com/chinazkk/dsh-task-panel#readme"
 }

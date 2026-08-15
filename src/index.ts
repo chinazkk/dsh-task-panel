@@ -1,3 +1,71 @@
+// @ts-nocheck — the plugin body below is JS-style (ported from the dynamic host body);
+// type-checking is disabled like the harness's own allowJs/checkJs:false packages.
+
+// dsh-task-panel · Host half (bundle form)
+// Converts the dynamic-plugin host body into a standard Cordis bundle plugin.
+// Client RPC (`harness.handle`) is bridged over a web route the client fetches.
+import { defineTool } from '@deepseek-ai/dsh-tools'
+
+const rpcHandlers = new Map()
+let rpcRegistered = false
+
+/** Convert a JSON-Schema-wrapper `parameters` object into the DSL property map `defineTool` expects. */
+function normalizeParameters(value) {
+  if (value && typeof value === 'object' && value.type === 'object' && value.properties) {
+    const required = new Set(value.required ?? [])
+    const spec = {}
+    for (const [k, v] of Object.entries(value.properties)) {
+      spec[k] = { ...v, ...(required.has(k) ? { required: true } : {}) }
+    }
+    return spec
+  }
+  return value
+}
+
+/** The closure symbols the dynamic host body references, backed by bundle APIs. */
+const harness = {
+  defineTool: (def) => defineTool({ ...def, parameters: normalizeParameters(def.parameters) }),
+  registerTool: (ctx, def) => ctx.tools.register(def),
+  handle: (method, fn) => {
+    rpcHandlers.set(method, fn)
+    return () => rpcHandlers.delete(method)
+  },
+}
+
+/** Register the client↔host RPC route once the web server is available. */
+function registerRpcRoute(ctx) {
+  if (rpcRegistered) return
+  const webServer = ctx.get('webServer') ?? ctx.get('httpServer')
+  if (!webServer) return
+  rpcRegistered = true
+  ctx.effect(() => webServer.register({
+    kind: 'exact',
+    path: '/plugins/dsh-task-panel/rpc',
+    handler: async (req, res) => {
+      let body = ''
+      for await (const chunk of req) body += chunk
+      let payload = /** @type {any} */ ({})
+      try { payload = JSON.parse(body || '{}') } catch { /* ignore */ }
+      const fn = rpcHandlers.get(payload.method)
+      if (!fn) {
+        res.writeHead(404)
+        res.end(JSON.stringify({ error: 'method-not-found' }))
+        return
+      }
+      try {
+        const value = await fn(payload.args ?? null)
+        res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
+        res.end(JSON.stringify(value ?? null))
+      } catch (e) {
+        res.writeHead(500)
+        res.end(JSON.stringify({ error: String(e && e.message ? e.message : e) }))
+      }
+    },
+  }), 'dsh-task-panel: rpc route')
+}
+
+// ── host.js dynamic body, verbatim ─────────────────────────────────────────
+const plugin = (() => {
 // ─────────────────────────────────────────────────────────────
 // dsh-task-panel · Host 半
 // 需求面板 + 双队列任务队列：
@@ -1165,7 +1233,7 @@ return {
             '待验收(accepting): ' + byStage('accepting').length,
             '验收完成(accepted): ' + byStage('accepted').length,
           ]
-          const accepting = byStage('accepting')[0]
+          const accepting = Object.values(requirements).find((r) => r.stage === 'accepting')
           if (accepting) {
             parts.push('', '【待验收需求 ' + accepting.id + '「' + accepting.title + '」】')
             parts.push('一句话产物：' + (accepting.deliverable || '（无）'))
@@ -1206,4 +1274,15 @@ return {
       }
     })
   },
+}
+})()
+
+export const name = 'dsh-task-panel'
+export const inject = [...plugin.inject, 'tools']
+export function apply(ctx) {
+  registerRpcRoute(ctx)
+  ctx.on('internal/service', (name) => {
+    if (name === 'webServer' || name === 'httpServer') registerRpcRoute(ctx)
+  })
+  return plugin.apply(ctx)
 }

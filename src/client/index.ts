@@ -1,3 +1,31 @@
+// @ts-nocheck — the plugin body below is JS-style (ported from the dynamic client body).
+
+// dsh-task-panel · Client half (bundle form)
+// Converts the dynamic-plugin client body into a standard Cordis browser bundle.
+// `host.call` is bridged to the host half over the `/plugins/dsh-task-panel/rpc`
+// route registered by the host half; `React` is the platform module; the
+// injected `slots`/`sessions` come from the client runtime.
+import * as React from 'react'
+
+const styles = {
+  insert(css) {
+    const el = document.createElement('style')
+    el.textContent = css
+    document.head.appendChild(el)
+    return () => { el.remove() }
+  },
+}
+
+const host = {
+  call: (method, args) =>
+    fetch('/plugins/dsh-task-panel/rpc', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ method, args: args ?? null }),
+    }).then((r) => r.json()),
+}
+
+const plugin = (() => {
 // ─────────────────────────────────────────────────────────────
 // dsh-task-panel · Client 半
 // 六列看板：需求队列 → 执行队列 → 执行中 → 已暂停 → 待验收 → 验收完成
@@ -715,4 +743,11 @@ return {
       (props) => h(TaskPanel, props),
     ))
   },
+}
+})()
+
+export const name = 'dsh-task-panel'
+export const inject = ['slots', 'sessions', ...plugin.inject]
+export function apply(ctx) {
+  return plugin.apply(ctx)
 }

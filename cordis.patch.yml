@@ -1,0 +1,4 @@
+# dsh-task-panel bundle patch — injects the plugin into the web profile
+- insert:
+    - id: dsh-task-panel
+      name: dsh-task-panel
