@@ -55,6 +55,8 @@ return {
       .dtp-pri-low { background: rgba(156, 163, 175, .14); color: #9aa0ac; }
       .dtp-deliverable { display: flex; gap: 6px; align-items: flex-start; margin: 2px 0 8px; padding: 8px 10px; border-radius: 8px; background: rgba(16, 185, 129, .11); border: 1px solid rgba(16, 185, 129, .28); color: #34d399; font-size: 11px; line-height: 1.5; word-break: break-all; }
       .dtp-deliverable .lab { font-weight: 700; flex: 0 0 auto; }
+      .dtp-deliverable-collapsed { cursor: pointer; align-items: center; opacity: .85; transition: opacity .15s; }
+      .dtp-deliverable-collapsed:hover { opacity: 1; border-color: rgba(16, 185, 129, .5); }
       .dtp-actions { display: flex; flex-wrap: wrap; gap: 5px; }
       .dtp-spin { display: inline-block; width: 11px; height: 11px; border: 2px solid #f59e0b; border-top-color: transparent; border-radius: 50%; animation: dtp-spin .8s linear infinite; vertical-align: middle; margin-right: 6px; }
       @keyframes dtp-spin { to { transform: rotate(360deg); } }
@@ -74,6 +76,21 @@ return {
       .dtp-field label { display: block; font-size: 11px; color: var(--dsw-alias-label-secondary, #9297a5); margin-bottom: 5px; font-weight: 550; }
       .dtp-field input, .dtp-field select, .dtp-field textarea { width: 100%; box-sizing: border-box; background: var(--dsw-alias-bg-layer-2, #20242f); color: var(--dsw-alias-label-primary, #ececf1); border: 1px solid var(--dsw-alias-border-l1, #2c3140); border-radius: 8px; padding: 7px 10px; font-size: 12px; outline: none; transition: border-color .15s; }
       .dtp-field input:focus, .dtp-field select:focus, .dtp-field textarea:focus { border-color: #3b82f6; }
+      .dtp-workdir-row { display: flex; gap: 6px; }
+      .dtp-workdir-row input { flex: 1; min-width: 0; }
+      .dtp-workdir-row .dtp-btn { flex: 0 0 auto; }
+      .dtp-dirbrowser { display: flex; flex-direction: column; gap: 8px; min-height: 320px; }
+      .dtp-dircrumbs { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 11px; }
+      .dtp-dircrumb { cursor: pointer; color: var(--dsw-alias-brand-primary, #60a5fa); padding: 2px 6px; border-radius: 6px; background: rgba(59,130,246,.08); }
+      .dtp-dircrumb:hover { background: rgba(59,130,246,.16); }
+      .dtp-dircrumb.last { color: var(--dsw-alias-label-primary, #ececf1); cursor: default; background: none; }
+      .dtp-dirsep { color: var(--dsw-alias-label-secondary, #8b8f9c); }
+      .dtp-direntries { flex: 1; min-height: 0; overflow-y: auto; border: 1px solid var(--dsw-alias-border-l1, #2c3140); border-radius: 8px; background: var(--dsw-alias-bg-layer-2, #20242f); }
+      .dtp-direntry { display: flex; align-items: center; gap: 8px; padding: 7px 12px; cursor: pointer; font-size: 12px; border-bottom: 1px solid var(--dsw-alias-border-l1, #262b38); color: var(--dsw-alias-label-primary, #ececf1); }
+      .dtp-direntry:hover { background: rgba(59,130,246,.1); }
+      .dtp-direntry .ic { flex: 0 0 auto; font-size: 13px; }
+      .dtp-dirselect { margin-left: auto; flex: 0 0 auto; }
+      .dtp-dirpath { font-size: 11px; color: var(--dsw-alias-label-secondary, #9297a5); word-break: break-all; padding: 6px 10px; background: rgba(255,255,255,.04); border-radius: 6px; }
       .dtp-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
       .dtp-transcript { display: flex; flex-direction: column; gap: 8px; }
       .dtp-msg { border-radius: 10px; padding: 9px 12px; font-size: 12px; white-space: pre-wrap; word-break: break-all; line-height: 1.55; }
@@ -304,6 +321,12 @@ return {
 
       const pri = String(req.priority || 'medium')
 
+      // 验收完成默认收起产物（点击展开）；待验收保持展开便于评审
+      const [deliverableOpen, setDeliverableOpen] = React.useState(stage !== 'accepted')
+      React.useEffect(() => {
+        setDeliverableOpen(stage !== 'accepted')
+      }, [stage])
+
       // 执行中实时进度预览（最近 3 条）
       let progressBlock = null
       if (stage === 'executing' && progress && Array.isArray(progress.recent) && progress.recent.length) {
@@ -321,6 +344,28 @@ return {
         )
       }
 
+      // 产物块：待验收展开；验收完成默认收起（点击展开/收起）
+      let deliverableBlock = null
+      if ((stage === 'accepting' || stage === 'accepted') && req.deliverable) {
+        if (deliverableOpen) {
+          deliverableBlock = h('div', { className: 'dtp-deliverable', title: '验收产物（一句话）' },
+            h('span', { className: 'lab' }, '产物'),
+            req.deliverable,
+          )
+        } else {
+          deliverableBlock = h('div',
+            {
+              className: 'dtp-deliverable dtp-deliverable-collapsed',
+              title: '点击展开验收产物',
+              onClick: () => setDeliverableOpen(true),
+            },
+            h('span', { className: 'lab' }, '产物'),
+            h('span', { className: 'ptxt', style: { flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
+              String(req.deliverable).slice(0, 60) + (String(req.deliverable).length > 60 ? '…' : '')),
+          )
+        }
+      }
+
       return h('div', { className: 'dtp-card' },
         h('div', { className: 'dtp-card-title' },
           h('span', { className: 'dtp-pri dtp-pri-' + pri }, pri),
@@ -335,12 +380,7 @@ return {
           req.reworkCount ? h('span', { style: { color: '#fbbf24' } }, '返工 ' + req.reworkCount) : null,
         ),
         progressBlock,
-        (stage === 'accepting' || stage === 'accepted') && req.deliverable
-          ? h('div', { className: 'dtp-deliverable', title: '验收产物（一句话）' },
-              h('span', { className: 'lab' }, '产物'),
-              req.deliverable,
-            )
-          : null,
+        deliverableBlock,
         actions,
       )
     }
@@ -356,6 +396,7 @@ return {
       const [command, setCommand] = React.useState(req ? req.command || '' : '')
       // 工作目录：编辑沿用需求绑定；新建默认用上次绑定（无则空，提示绑定）
       const [workdir, setWorkdir] = React.useState(req ? (req.workdir || '') : (lastWorkdir || ''))
+      const [dirPickerOpen, setDirPickerOpen] = React.useState(false)
       const [busy, setBusy] = React.useState(false)
 
       const save = () => {
@@ -386,7 +427,7 @@ return {
           h('h2', null, isEdit ? '编辑需求 ' + req.id : '新建需求'),
           !isEdit && !workdir
             ? h('div', { className: 'dtp-field', style: { background: 'rgba(245,158,11,.12)', border: '1px solid rgba(245,158,11,.35)', borderRadius: 8, padding: '7px 10px', color: '#fbbf24', fontSize: 11 } },
-                '⚠ 尚未绑定工作目录，子 agent 执行时无法确定落盘位置，请填写下方「绑定工作目录」。',
+                '⚠ 尚未绑定工作目录，子 agent 执行时无法确定落盘位置，请选择或填写「绑定工作目录」。',
               )
             : null,
           h('div', { className: 'dtp-field' },
@@ -405,7 +446,10 @@ return {
           ),
           h('div', { className: 'dtp-field' },
             h('label', null, '绑定工作目录 *'),
-            h('input', { value: workdir, onChange: (e) => setWorkdir(e.target.value), placeholder: '如: /Users/xxx/project 或 ~/project（子 agent 在此目录执行）' }),
+            h('div', { className: 'dtp-workdir-row' },
+              h('input', { value: workdir, onChange: (e) => setWorkdir(e.target.value), placeholder: '如: /Users/xxx/project（子 agent 在此目录执行）' }),
+              h('button', { className: 'dtp-btn', onClick: () => setDirPickerOpen(true) }, '📁 浏览…'),
+            ),
           ),
           h('div', { className: 'dtp-field' },
             h('label', null, '涉及范围（逗号分隔）'),
@@ -418,6 +462,114 @@ return {
           h('div', { className: 'dtp-modal-actions' },
             h('button', { className: 'dtp-btn', onClick: onClose }, '取消'),
             h('button', { className: 'dtp-btn primary', onClick: save, disabled: busy }, busy ? '保存中…' : '保存'),
+          ),
+        ),
+        dirPickerOpen ? h(DirectoryPickerModal, {
+          initial: workdir,
+          onClose: () => setDirPickerOpen(false),
+          onPick: (path) => { setWorkdir(path); setDirPickerOpen(false) },
+          onToast,
+        }) : null,
+      )
+    }
+
+    // ── 目录选择弹窗（绑定工作目录用；browse 浏览 / native 系统选择器） ──
+    function DirectoryPickerModal(props) {
+      const { initial, onClose, onPick, onToast } = props
+      const [mode, setMode] = React.useState(null)     // null | 'browse' | 'native'
+      const [path, setPath] = React.useState(initial || '')
+      const [crumbs, setCrumbs] = React.useState([])
+      const [entries, setEntries] = React.useState([])
+      const [loading, setLoading] = React.useState(false)
+      const [error, setError] = React.useState(null)
+
+      // 打开时探测能力：先试 browse，失败再试 native
+      React.useEffect(() => {
+        let cancelled = false
+        host.call('browse-dir', { path: initial || undefined }).then((r) => {
+          if (cancelled) return
+          if (r && r.ok) {
+            setMode('browse')
+            setCrumbs(r.crumbs || [])
+            setEntries(r.entries || [])
+            setPath(r.path || initial || '')
+          } else if (r && r.native) {
+            setMode('native')
+          } else {
+            setMode('browse')
+            setError(r && r.error ? r.error : '目录浏览不可用')
+          }
+        }).catch(() => { if (!cancelled) setMode('browse') })
+        return () => { cancelled = true }
+      }, [])
+
+      const openDir = (p) => {
+        setLoading(true)
+        setError(null)
+        host.call('browse-dir', { path: p }).then((r) => {
+          setLoading(false)
+          if (r && r.ok) {
+            setCrumbs(r.crumbs || [])
+            setEntries(r.entries || [])
+            setPath(r.path || p)
+          } else {
+            setError(r && r.error ? r.error : '无法打开目录')
+          }
+        }).catch(() => { setLoading(false); setError('无法打开目录') })
+      }
+
+      const pickNative = () => {
+        setLoading(true)
+        setError(null)
+        host.call('pick-dir', {}).then((r) => {
+          setLoading(false)
+          if (r && r.ok && r.path) onPick(r.path)
+          else setError(r && r.error ? r.error : '已取消或不可用')
+        }).catch(() => { setLoading(false); setError('目录选择失败') })
+      }
+
+      return h('div', { className: 'dtp-modal-backdrop', onClick: onClose },
+        h('div', { className: 'dtp-modal', style: { width: 560 }, onClick: (e) => e.stopPropagation() },
+          h('h2', null, '选择工作目录'),
+          h('div', { className: 'dtp-dirbrowser' },
+            h('div', { style: { display: 'flex', gap: 8, alignItems: 'center' } },
+              mode === 'native'
+                ? h('button', { className: 'dtp-btn primary', onClick: pickNative, disabled: loading }, loading ? '打开选择器…' : '🗔 打开系统目录选择器')
+                : h('button', { className: 'dtp-btn', onClick: () => openDir(initial || undefined), disabled: loading }, '↻ 刷新'),
+              h('button', { className: 'dtp-btn', onClick: () => openDir(undefined) }, '🏠 主目录'),
+            ),
+            error ? h('div', { style: { fontSize: 11, color: '#f87171', padding: '6px 10px', background: 'rgba(248,81,73,.08)', borderRadius: 6 } }, '⚠ ' + error) : null,
+            mode !== 'native'
+              ? h('div', { className: 'dtp-dircrumbs' },
+                  (crumbs.length ? crumbs : [{ name: '…', path: undefined }]).map((c, i) => {
+                    const isLast = i === crumbs.length - 1
+                    return h('span', { key: i, style: { display: 'inline-flex', alignItems: 'center', gap: 4 } },
+                      h('span', { className: 'dtp-dircrumb' + (isLast ? ' last' : ''), onClick: () => { if (!isLast && c.path) openDir(c.path) } }, c.name),
+                      !isLast ? h('span', { className: 'dtp-dirsep' }, '›') : null,
+                    )
+                  }),
+                )
+              : null,
+            mode !== 'native'
+              ? h('div', { className: 'dtp-direntries' },
+                  loading
+                    ? h('div', { className: 'dtp-empty' }, h('span', { className: 'dtp-spin' }), '加载中…')
+                    : entries.length === 0
+                      ? h('div', { className: 'dtp-empty' }, '（无子目录）')
+                      : entries.map((e, i) =>
+                          h('div', { className: 'dtp-direntry', key: i, onClick: () => openDir(e.path) },
+                            h('span', { className: 'ic' }, e.hidden ? '📂' : '📁'),
+                            h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, e.name),
+                            h('button', { className: 'dtp-btn small dtp-dirselect', onClick: (ev) => { ev.stopPropagation(); onPick(e.path) } }, '选用'),
+                          ),
+                        ),
+                )
+              : null,
+            h('div', { className: 'dtp-dirpath' }, '当前：' + (path || '（未选择）')),
+          ),
+          h('div', { className: 'dtp-modal-actions' },
+            h('button', { className: 'dtp-btn', onClick: onClose }, '取消'),
+            h('button', { className: 'dtp-btn primary', onClick: () => { if (path) onPick(path) }, disabled: !path }, '选用当前目录'),
           ),
         ),
       )

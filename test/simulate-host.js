@@ -75,6 +75,17 @@ const ctx = {
     if (name === 'sessionQuery') return mockSessionQuery
     if (name === 'agentPresets') return { composeFrom: (childCtx, parentCtx) => 'default' }
     if (name === 'agentDefaultModel') return { currentSelection: () => ({ provider: 'deepseek', model: 'deepseek-chat' }) }
+    if (name === 'directoryPicker') return {
+      capability: () => ({
+        kind: 'browse',
+        list: async (path) => ({
+          path: path || '/workspace',
+          home: '/home/user',
+          crumbs: [{ name: 'Users', path: '/Users' }, { name: 'jekin', path: '/home/user' }, { name: 'workplace', path: '/workspace' }],
+          entries: [{ name: 'dsh-task-panel', path: '/workspace/dsh-task-panel', hidden: false }],
+        }),
+      }),
+    }
     return undefined
   },
   on: (ev, fn) => { (listeners[ev] = listeners[ev] || []).push(fn); return () => {} },
@@ -329,6 +340,13 @@ async function main() {
   const rv2 = await regHandlers.get({ id: rq.id })
   assert(rv2.stage === 'accepting' && /兜底信号/.test(rv2.deliverable), '兜底信号执行完成后正常进入待验收')
   console.log('[17b] 兜底信号执行完成 → stage =', rv2.stage, '| 产物 =', rv2.deliverable)
+
+  // 18. 目录选择：browse-dir RPC 列出目录层级（绑定工作目录选择器用）
+  const br = await handlers['browse-dir']({ path: '/workspace' })
+  console.log('[18] browse-dir → ok =', br && br.ok, '| path =', br && br.path, '| entries =', br && br.entries && br.entries.length)
+  assert(br && br.ok === true, 'browse-dir 应成功返回')
+  assert(br.path === '/workspace', '应返回目标目录路径')
+  assert(Array.isArray(br.entries) && br.entries.some((e) => e.path.includes('dsh-task-panel')), '应列出子目录（含 dsh-task-panel）')
 }
 
 main().catch((e) => { console.error('测试异常:', e); process.exit(1) })

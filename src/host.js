@@ -18,6 +18,7 @@ return {
     const systemPrompt = ctx.get('systemPrompt')
     const agentPresets = ctx.get('agentPresets')
     const agentDefaultModel = ctx.get('agentDefaultModel')
+    const directoryPicker = ctx.get('directoryPicker')
 
     const MAX_REWORK = 5
     // 执行器不应使用面板管理工具（防止误调 complete_execution 等绕过队列元数据捕获）
@@ -888,6 +889,40 @@ return {
     handle('resume', async (a) => {
       resumeExecution(a.id)
       return stateView()
+    })
+    handle('browse-dir', async (a) => {
+      // 目录选择：列出指定目录层级（供「绑定工作目录」选择器使用）
+      if (!directoryPicker) return { ok: false, error: 'directoryPicker 不可用' }
+      try {
+        const cap = directoryPicker.capability()
+        if (!cap || cap.kind !== 'browse') {
+          return { ok: false, error: '目录选择器不支持浏览模式（kind=' + (cap && cap.kind) + '）', native: cap && cap.kind === 'native' }
+        }
+        const listing = await cap.list(a && a.path ? String(a.path) : undefined, undefined)
+        return {
+          ok: true,
+          path: listing.path,
+          home: listing.home,
+          crumbs: Array.isArray(listing.crumbs) ? listing.crumbs : [],
+          entries: Array.isArray(listing.entries) ? listing.entries : [],
+        }
+      } catch (e) {
+        return { ok: false, error: e && e.message ? e.message : String(e) }
+      }
+    })
+    handle('pick-dir', async (a) => {
+      // 目录选择：原生 OS 选择器（native capability）
+      if (!directoryPicker) return { ok: false, error: 'directoryPicker 不可用' }
+      try {
+        const cap = directoryPicker.capability()
+        if (!cap || cap.kind !== 'native') {
+          return { ok: false, error: '目录选择器不支持原生选择（kind=' + (cap && cap.kind) + '）', browse: cap && cap.kind === 'browse' }
+        }
+        const chosen = await cap.pick(undefined)
+        return { ok: true, path: chosen }
+      } catch (e) {
+        return { ok: false, error: e && e.message ? e.message : String(e) }
+      }
     })
 
     // ── Agent 工具（8 个） ─────────────────────────────
