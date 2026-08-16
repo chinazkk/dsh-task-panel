@@ -58,10 +58,15 @@ const mockSubagents = {
   },
 }
 
+// 根 agent 在 apply 之后才就绪（真实时序：启动时 roots() 可能为空，
+// 面板/执行器创建时才出现）——用于验证写盘策略必须每次重新解析、不能复用启动时的过期策略。
+const ROOT_AGENT = { id: 'root-agent', session: { id: 'root-session', header: { cwd: '/workspace' } }, ctx: {} }
+let rootAgentReady = false
+
 const mockAgents = {
   currentInitiator: () => null,
-  roots: () => [{ id: 'root-agent', session: { id: 'root-session', header: { cwd: '/workspace' } }, ctx: {} }],
-  list: () => [{ id: 'root-agent', session: { id: 'root-session', header: { cwd: '/workspace' } }, ctx: {} }],
+  roots: () => (rootAgentReady ? [ROOT_AGENT] : []),
+  list: () => (rootAgentReady ? [ROOT_AGENT] : []),
   // 面板专用 agent：独立 session + 独立 cwd（setup 里 composeFrom 继承根装配）
   create: async (opts) => {
     const agent = {
@@ -78,6 +83,7 @@ const mockAgents = {
   },
 }
 
+const writeCalls = [] // 记录每次 fs.writeText 收到的 policy（验证按新 session 策略写）
 const listeners = {}
 const ctx = {
   subagents: mockSubagents,
@@ -90,7 +96,9 @@ const ctx = {
     if (name === 'fs') return {
       resolve: async (p) => p,
       readText: async () => null,
-      writeText: async () => {},
+      writeText: async (target, content, a, b, policy) => {
+        writeCalls.push({ target, policyRoot: policy && policy.workspaceRoot })
+      },
       stat: async () => null,
     }
     if (name === 'sandboxPolicy') return {
@@ -169,6 +177,8 @@ async function main() {
   // 模拟 agent/pre-step 事件 → 注入 AbortSignal 构造器
   for (const fn of listeners['agent/pre-step'] || []) await fn({ signal: AbortSignal.timeout(60000) }, () => 'next')
   console.log('✅ 已注入 AbortSignal（来自 agent/pre-step）')
+  // 根 agent 此刻才就绪（启动时 roots() 为空 → 若复用启动时的过期写盘策略会写失败）
+  rootAgentReady = true
 
   // 1. create → backlog
   let a = await rpc('create', { title: '创建测试文件', description: '在仓库创建 demo.txt，内容 ok，含测试', priority: 'high', scope: ['src/'] })
@@ -176,11 +186,16 @@ async function main() {
   assert(a.stage === 'backlog', 'create 后应在 backlog')
   assert(a.elements.length >= 1 && a.acceptanceCriteria.length >= 1, '应自动拆解要素与验收')
 
-  // 1b. 持久化：写盘策略按根会话 cwd 解析（mock 根 agent cwd = /workspace），不应写失败
+  // 1b. 持久化：每次写盘必须用新解析的 session 化策略（根 agent cwd = /workspace），
+  //     不能复用启动时（根 agent 未就绪）缓存的过期部署根策略，否则绑定目录写盘被拒。
   await sleep(50)
   const sv0 = await rpc('state', {})
   console.log('[1b] persistDiag =', sv0.persistDiag)
   assert(!String(sv0.persistDiag || '').includes('write failed'), '持久化不应写失败（session 化策略根解析）')
+  const lastWrite = writeCalls[writeCalls.length - 1]
+  console.log('[1b] 最近一次写盘 policyRoot =', lastWrite && lastWrite.policyRoot)
+  assert(lastWrite && lastWrite.policyRoot === '/workspace',
+    '写盘必须使用根会话 cwd 解析的新策略（而非启动时缓存的过期部署根策略）')
 
   // 2. update 编辑
   a = await rpc('update', { id: a.id, title: '创建测试文件（已编辑）', description: '改后的描述' })

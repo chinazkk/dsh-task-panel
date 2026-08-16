@@ -261,7 +261,7 @@ return {
             dataTargetPromise = null
             const newTarget = await resolveDataTarget()
             if (newTarget) {
-              try { await fs.writeText(newTarget, text, undefined, undefined, writePolicy); fromOld = true } catch (e) { /* noop */ }
+              try { await fs.writeText(newTarget, text, undefined, undefined, resolveSessionPolicy()); fromOld = true } catch (e) { /* noop */ }
             }
           }
         }
@@ -283,7 +283,10 @@ return {
         try {
           const target = await resolveDataTarget()
           if (!target) return
-          await fs.writeText(target, JSON.stringify({ requirements, backlog, execQueue, lastWorkdir }), undefined, undefined, writePolicy)
+          // 每次写盘重新解析 session 化策略：启动时根 agent 可能尚未就绪，
+          // resolveDataTarget 缓存的 writePolicy 可能是无 session 的部署根策略
+          // （写绑定目录会被拒）；此刻根 agent 已就绪，必须用新策略写。
+          await fs.writeText(target, JSON.stringify({ requirements, backlog, execQueue, lastWorkdir }), undefined, undefined, resolveSessionPolicy())
           persistDiag = 'written'
         } catch (e) {
           // 兜底：绑定目录不可写（如 lastWorkdir 超出根会话 cwd）时，
