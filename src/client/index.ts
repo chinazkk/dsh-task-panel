@@ -32,7 +32,7 @@ const plugin = (() => {
 //   · 新增 / 编辑 / 删除需求
 //   · 丢执行 / 置顶 / 撤回
 //   · 验收：一句话产物 + 查看对话（跳转真实子代理会话）+ 通过/返工反馈
-//   · 执行中：实时进度预览 + 查看进度弹窗（实时对话流 + 一键进入子代理会话）
+//   · 执行中：实时进度预览 + 查看进度（一键直达子代理会话——会话即实时进度）
 //   · 工作目录：目录选择器（browse 浏览 / native 系统选择器）
 //   · 验收完成产物默认收起（点击展开）
 // 入口：与「对话 / 轨迹」同级的会话视图标签页（conversation.view）。
@@ -105,7 +105,7 @@ return {
       .dtp-progress .pmeta { font-size: 10px; color: var(--dsw-alias-label-secondary, #8b8f9c); margin-bottom: 4px; }
       .dtp-progress.jumpable { cursor: pointer; transition: border-color .15s, background .15s; }
       .dtp-progress.jumpable:hover { border-color: #fbbf24; background: rgba(245, 158, 11, .16); }
-      .dtp-progress.jumpable::after { content: '↗ 跳转会话'; display: block; margin-top: 4px; font-size: 10px; font-weight: 700; color: #fbbf24; }
+      .dtp-progress.jumpable::after { content: '↗ 查看进度（进入会话）'; display: block; margin-top: 4px; font-size: 10px; font-weight: 700; color: #fbbf24; }
       .dtp-pulse { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #f59e0b; margin-right: 6px; animation: dtp-pulse 1.2s ease-in-out infinite; }
       @keyframes dtp-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.8); } }
       .dtp-badge { font-size: 11px; color: #34d399; font-weight: 600; }
@@ -200,7 +200,6 @@ return {
       const [formReq, setFormReq] = React.useState(null)   // null | {mode:'create'} | {mode:'edit', id}
       const [reworkReq, setReworkReq] = React.useState(null) // null | {id,title}
       const [convReq, setConvReq] = React.useState(null)    // null | {id,title,sessionId}
-      const [progressReq, setProgressReq] = React.useState(null) // null | {id,title}
       const [toast, setToast] = React.useState(null)
 
       React.useEffect(() => {
@@ -231,11 +230,13 @@ return {
         })
       }
 
-      // 执行中：一键直达子代理会话（进度实时数据里带 sessionId/parentSessionId，无需再查）
+      // 执行中「查看进度」= 直达子代理会话（会话即实时进度，无需再开弹窗）。
+      // 进度实时数据里带 sessionId/parentSessionId；子会话尚未建立或跳转不可用时，
+      // 回退到对话摘要弹窗看已捕获的实时对话。
       const jumpSession = (p) => {
         if (!p || !p.sessionId) { setToast('子会话尚未建立，稍后再试'); return }
         openAgentConversation(p.sessionId, p.parentSessionId).then((ok) => {
-          if (!ok) setToast('会话暂不可跳转，可打开「查看进度」查看实时对话')
+          if (!ok) setConvReq({ id: p.id, title: p.title, sessionId: p.sessionId })
         })
       }
 
@@ -283,7 +284,6 @@ return {
                         onStop: () => doCall('stop', { id: r.id }),
                         onResume: () => doCall('resume', { id: r.id }),
                         onConv: () => viewConversation(r),
-                        onShowProgress: () => setProgressReq({ id: r.id, title: r.title }),
                         onJumpSession: () => jumpSession((progress || []).find((p) => p.id === r.id) || null),
                       }),
                     ),
@@ -308,17 +308,13 @@ return {
           req: convReq,
           onClose: () => setConvReq(null),
         }) : null,
-        progressReq ? h(ProgressModal, {
-          req: progressReq,
-          onClose: () => setProgressReq(null),
-        }) : null,
         toast ? h('div', { className: 'dtp-toast' }, toast) : null,
       )
     }
 
     // ── 需求卡片 ──
     function Card(props) {
-      const { req, stage, progress, onEdit, onDelete, onDispatch, onRecall, onTop, onAccept, onRework, onPause, onStop, onResume, onConv, onShowProgress, onJumpSession } = props
+      const { req, stage, progress, onEdit, onDelete, onDispatch, onRecall, onTop, onAccept, onRework, onPause, onStop, onResume, onConv, onJumpSession } = props
       const [confirmDel, setConfirmDel] = React.useState(false)
       const [deliverableOpen, setDeliverableOpen] = React.useState(stage !== 'accepted')
       React.useEffect(() => {
@@ -355,9 +351,8 @@ return {
             className: 'dtp-btn small ok',
             onClick: onJumpSession,
             disabled: !(progress && progress.sessionId),
-            title: progress && progress.sessionId ? '跳转到对应子代理会话' : '子会话尚未建立',
-          }, '↗ 会话'),
-          h('button', { className: 'dtp-btn small primary', onClick: onShowProgress }, '▶ 查看进度'),
+            title: progress && progress.sessionId ? '查看进度 = 跳转到对应子代理会话（实时进度）' : '子会话尚未建立',
+          }, '查看进度'),
           h('button', { className: 'dtp-btn small', onClick: onPause }, '⏸ 暂停'),
           h('button', { className: 'dtp-btn small danger', onClick: onStop }, '⏹ 停止'),
         )
@@ -663,67 +658,6 @@ return {
           h('div', { className: 'dtp-modal-actions' },
             h('button', { className: 'dtp-btn', onClick: onClose }, '取消'),
             h('button', { className: 'dtp-btn danger', onClick: submit, disabled: busy }, busy ? '提交中…' : '确认返工'),
-          ),
-        ),
-      )
-    }
-
-    // ── 实时执行进度弹窗（轮询完整对话 + 一键进入真实子代理会话） ──
-    function ProgressModal(props) {
-      const { req, onClose } = props
-      const [detail, setDetail] = React.useState(null) // {sessionId, parentSessionId, transcript}
-      const [elapsed, setElapsed] = React.useState(0)
-
-      React.useEffect(() => {
-        let cancelled = false
-        const load = () => {
-          host.call('conversation', { id: req.id }).then((d) => {
-            if (!cancelled && d) setDetail(d)
-          }).catch(() => {})
-        }
-        load()
-        const disposer = interval(() => load(), 1500)
-        return () => { cancelled = true; if (typeof disposer === 'function') disposer() }
-      }, [req.id])
-
-      React.useEffect(() => {
-        if (detail && detail.sessionId) {
-          const t = interval(() => setElapsed(Date.now()), 1000)
-          return () => { if (typeof t === 'function') t() }
-        }
-      }, [detail && detail.sessionId])
-
-      const who = { user: '用户输入', assistant: 'Agent 回复', tool: '工具调用' }
-      const rows = detail && Array.isArray(detail.transcript) ? detail.transcript : []
-      const fmt = (ms) => {
-        if (!ms) return '0s'
-        const s = Math.floor(ms / 1000)
-        return (s >= 60 ? Math.floor(s / 60) + 'm ' : '') + (s % 60) + 's'
-      }
-
-      return h('div', { className: 'dtp-modal-backdrop', onClick: onClose },
-        h('div', { className: 'dtp-modal', style: { width: 680 }, onClick: (e) => e.stopPropagation() },
-          h('h2', null, '执行进度 · ' + req.title),
-          h('div', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary, #9297a5)', marginBottom: 10, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' } },
-            h('span', { style: { color: '#fbbf24', fontWeight: 700 } }, h('span', { className: 'dtp-pulse' }), '子 agent 执行中'),
-            detail && detail.sessionId ? h('span', null, 'session: ' + String(detail.sessionId).slice(0, 12) + '…') : null,
-            h('span', null, '已运行 ' + fmt(elapsed) + ' · ' + rows.length + ' 条消息'),
-          ),
-          rows.length === 0
-            ? h('div', { className: 'dtp-empty' }, h('span', { className: 'dtp-spin' }), '等待子 agent 输出…')
-            : h('div', { className: 'dtp-transcript dtp-scroll', style: { maxHeight: '46vh', overflowY: 'auto' } },
-                rows.map((m, i) =>
-                  h('div', { className: 'dtp-msg ' + m.role, key: i },
-                    h('span', { className: 'who' }, who[m.role] || m.role),
-                    m.text,
-                  ),
-                ),
-              ),
-          h('div', { className: 'dtp-modal-actions' },
-            detail && detail.sessionId
-              ? h('button', { className: 'dtp-btn primary', onClick: () => { openAgentConversation(detail.sessionId, detail.parentSessionId).then((ok) => { if (!ok) onClose() }) } }, '↗ 进入子代理会话')
-              : null,
-            h('button', { className: 'dtp-btn', onClick: onClose }, '关闭'),
           ),
         ),
       )
