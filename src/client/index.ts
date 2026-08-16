@@ -502,7 +502,7 @@ return {
           h('div', { className: 'dtp-field' },
             h('label', null, '绑定工作目录 *'),
             h('div', { className: 'dtp-workdir-row' },
-              h('input', { value: workdir, onChange: (e) => setWorkdir(e.target.value), placeholder: '如: /Users/xxx/project（子 agent 在此目录执行）' }),
+              h('input', { value: workdir, onChange: (e) => setWorkdir(e.target.value), placeholder: '如: /path/to/project（子 agent 在此目录执行）' }),
               h('button', { className: 'dtp-btn', onClick: () => setDirPickerOpen(true) }, '📁 浏览…'),
             ),
           ),

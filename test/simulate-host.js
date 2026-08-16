@@ -60,7 +60,7 @@ const mockSubagents = {
 
 // 根 agent 在 apply 之后才就绪（真实时序：启动时 roots() 可能为空，
 // 面板/执行器创建时才出现）——用于验证写盘策略必须每次重新解析、不能复用启动时的过期策略。
-const ROOT_AGENT = { id: 'root-agent', session: { id: 'root-session', header: { cwd: '/workspace' } }, ctx: {} }
+const ROOT_AGENT = { id: 'root-agent', session: { id: 'root-session', header: { cwd: '/workspace/demo' } }, ctx: {} }
 let rootAgentReady = false
 
 const mockAgents = {
@@ -115,10 +115,10 @@ const ctx = {
       capability: () => ({
         kind: 'browse',
         list: async (path) => ({
-          path: path || '/workspace',
+          path: path || '/workspace/demo',
           home: '/home/user',
-          crumbs: [{ name: 'Users', path: '/Users' }, { name: 'jekin', path: '/home/user' }, { name: 'workplace', path: '/workspace' }],
-          entries: [{ name: 'dsh-task-panel', path: '/workspace/dsh-task-panel', hidden: false }],
+          crumbs: [{ name: 'home', path: '/home' }, { name: 'user', path: '/home/user' }, { name: 'demo', path: '/workspace/demo' }],
+          entries: [{ name: 'dsh-task-panel', path: '/workspace/demo/dsh-task-panel', hidden: false }],
         }),
       }),
     }
@@ -186,7 +186,7 @@ async function main() {
   assert(a.stage === 'backlog', 'create 后应在 backlog')
   assert(a.elements.length >= 1 && a.acceptanceCriteria.length >= 1, '应自动拆解要素与验收')
 
-  // 1b. 持久化：每次写盘必须用新解析的 session 化策略（根 agent cwd = /workspace），
+  // 1b. 持久化：每次写盘必须用新解析的 session 化策略（根 agent cwd = /workspace/demo），
   //     不能复用启动时（根 agent 未就绪）缓存的过期部署根策略，否则绑定目录写盘被拒。
   await sleep(50)
   const sv0 = await rpc('state', {})
@@ -194,7 +194,7 @@ async function main() {
   assert(!String(sv0.persistDiag || '').includes('write failed'), '持久化不应写失败（session 化策略根解析）')
   const lastWrite = writeCalls[writeCalls.length - 1]
   console.log('[1b] 最近一次写盘 policyRoot =', lastWrite && lastWrite.policyRoot)
-  assert(lastWrite && lastWrite.policyRoot === '/workspace',
+  assert(lastWrite && lastWrite.policyRoot === '/workspace/demo',
     '写盘必须使用根会话 cwd 解析的新策略（而非启动时缓存的过期部署根策略）')
 
   // 2. update 编辑
@@ -203,9 +203,9 @@ async function main() {
   assert(a.title === '创建测试文件（已编辑）', 'update 应生效')
 
   // 3. set-workdir 绑定
-  const wd = await rpc('set-workdir', { workdir: '/workspace/dsh-task-panel' })
+  const wd = await rpc('set-workdir', { workdir: '/workspace/demo/dsh-task-panel' })
   console.log('[2b] set-workdir →', JSON.stringify(wd))
-  assert(wd.ok === true && wd.lastWorkdir === '/workspace/dsh-task-panel', 'set-workdir 应生效')
+  assert(wd.ok === true && wd.lastWorkdir === '/workspace/demo/dsh-task-panel', 'set-workdir 应生效')
 
   // 4. dispatch → executing（手动控制完成）
   await rpc('dispatch', { id: a.id })
@@ -308,7 +308,7 @@ async function main() {
   assert(promptText.includes('需求面板状态'), '提示词段落应含面板状态')
 
   // 14. 目录选择 RPC（browse-dir）
-  const bd = await rpc('browse-dir', { path: '/workspace' })
+  const bd = await rpc('browse-dir', { path: '/workspace/demo' })
   console.log('[14] browse-dir → ok =', bd.ok, '| entries =', bd.entries && bd.entries.length)
   assert(bd.ok === true && Array.isArray(bd.entries), 'browse-dir 应可用')
 

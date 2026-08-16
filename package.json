@@ -53,13 +53,15 @@
   "keywords": [
     "deepseek-harness",
     "dsh",
+    "dsh-plugin",
     "cordis",
     "bundle",
     "task-panel",
-    "requirements",
     "kanban",
     "task-queue",
-    "subagent"
+    "requirements",
+    "subagent",
+    "deepseek"
   ],
   "engines": {
     "node": ">=18"
