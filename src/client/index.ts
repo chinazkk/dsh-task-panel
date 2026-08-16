@@ -103,6 +103,9 @@ return {
       .dtp-progress .pwho { flex: 0 0 auto; font-weight: 700; color: #fbbf24; font-size: 10px; }
       .dtp-progress .ptxt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .dtp-progress .pmeta { font-size: 10px; color: var(--dsw-alias-label-secondary, #8b8f9c); margin-bottom: 4px; }
+      .dtp-progress.jumpable { cursor: pointer; transition: border-color .15s, background .15s; }
+      .dtp-progress.jumpable:hover { border-color: #fbbf24; background: rgba(245, 158, 11, .16); }
+      .dtp-progress.jumpable::after { content: '↗ 跳转会话'; display: block; margin-top: 4px; font-size: 10px; font-weight: 700; color: #fbbf24; }
       .dtp-pulse { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #f59e0b; margin-right: 6px; animation: dtp-pulse 1.2s ease-in-out infinite; }
       @keyframes dtp-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.8); } }
       .dtp-badge { font-size: 11px; color: #34d399; font-weight: 600; }
@@ -228,6 +231,14 @@ return {
         })
       }
 
+      // 执行中：一键直达子代理会话（进度实时数据里带 sessionId/parentSessionId，无需再查）
+      const jumpSession = (p) => {
+        if (!p || !p.sessionId) { setToast('子会话尚未建立，稍后再试'); return }
+        openAgentConversation(p.sessionId, p.parentSessionId).then((ok) => {
+          if (!ok) setToast('会话暂不可跳转，可打开「查看进度」查看实时对话')
+        })
+      }
+
       const total = data ? data.requirements.length : 0
       const executing = byStage('executing').length
       const accepting = byStage('accepting').length
@@ -273,6 +284,7 @@ return {
                         onResume: () => doCall('resume', { id: r.id }),
                         onConv: () => viewConversation(r),
                         onShowProgress: () => setProgressReq({ id: r.id, title: r.title }),
+                        onJumpSession: () => jumpSession((progress || []).find((p) => p.id === r.id) || null),
                       }),
                     ),
               ),
@@ -306,7 +318,7 @@ return {
 
     // ── 需求卡片 ──
     function Card(props) {
-      const { req, stage, progress, onEdit, onDelete, onDispatch, onRecall, onTop, onAccept, onRework, onPause, onStop, onResume, onConv, onShowProgress } = props
+      const { req, stage, progress, onEdit, onDelete, onDispatch, onRecall, onTop, onAccept, onRework, onPause, onStop, onResume, onConv, onShowProgress, onJumpSession } = props
       const [confirmDel, setConfirmDel] = React.useState(false)
       const [deliverableOpen, setDeliverableOpen] = React.useState(stage !== 'accepted')
       React.useEffect(() => {
@@ -339,6 +351,12 @@ return {
             h('span', { className: 'dtp-pulse' }),
             '子 agent 执行中' + (progress && progress.sessionId ? ' · ' + String(progress.sessionId).slice(0, 8) : '') + (progress ? ' · ' + Math.round((progress.elapsedMs || 0) / 1000) + 's' : ''),
           ),
+          h('button', {
+            className: 'dtp-btn small ok',
+            onClick: onJumpSession,
+            disabled: !(progress && progress.sessionId),
+            title: progress && progress.sessionId ? '跳转到对应子代理会话' : '子会话尚未建立',
+          }, '↗ 会话'),
           h('button', { className: 'dtp-btn small primary', onClick: onShowProgress }, '▶ 查看进度'),
           h('button', { className: 'dtp-btn small', onClick: onPause }, '⏸ 暂停'),
           h('button', { className: 'dtp-btn small danger', onClick: onStop }, '⏹ 停止'),
@@ -367,7 +385,13 @@ return {
       let progressBlock = null
       if (stage === 'executing' && progress && Array.isArray(progress.recent) && progress.recent.length) {
         const who = { user: '用户', assistant: 'Agent', tool: '工具' }
-        progressBlock = h('div', { className: 'dtp-progress' },
+        const jumpable = !!(progress.sessionId)
+        // 进度预览可直接点击跳转到对应子代理会话
+        progressBlock = h('div', {
+          className: 'dtp-progress' + (jumpable ? ' jumpable' : ''),
+          title: jumpable ? '点击跳转到对应子代理会话' : '子会话尚未建立',
+          onClick: jumpable ? onJumpSession : undefined,
+        },
           progress.workdir
             ? h('div', { className: 'pmeta', title: progress.workdir }, '📁 ' + progress.workdir)
             : null,
