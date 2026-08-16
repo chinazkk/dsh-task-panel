@@ -7,3 +7,6 @@ dist/
 
 # 运行时数据（不纳入版本管理）
 .dsh-task-panel/
+
+# 面板 agent 工作区（执行器交付物等运行时产物，不入库）
+dsh-task-panel/
