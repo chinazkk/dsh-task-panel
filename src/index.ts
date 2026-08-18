@@ -1314,7 +1314,10 @@ return {
     // ── 系统提示词段落：让主 agent 感知面板状态 ──
     if (systemPrompt && typeof systemPrompt.section === 'function') {
       try {
-        systemPrompt.section(async () => {
+        systemPrompt.section({
+          name: 'dsh-task-panel:state',
+          order: 90,
+          text: async () => {
           const sv = stateView()
           const byStage = (s) => sv.requirements.filter((r) => r.stage === s)
           const line = (r) => '-' + r.id + ' [' + r.priority + '] ' + r.title
@@ -1337,6 +1340,7 @@ return {
             parts.push('可调用 submit_acceptance 完成验收，或通过 UI 进行验收反馈。')
           }
           return parts.join('\n')
+          },
         })
       } catch (e) { console.error('system prompt section failed', e) }
     }

@@ -108,7 +108,7 @@ const ctx = {
         workspaceRoot: (req && req.session && req.session.header && req.session.header.cwd) || '/tmp',
       }),
     }
-    if (name === 'systemPrompt') return { section: (cb) => { promptSection = cb } }
+    if (name === 'systemPrompt') return { section: (section) => { promptSection = typeof section === 'function' ? section : section.text } }
     if (name === 'agentPresets') return { composeFrom: (childCtx, parentCtx) => 'default' }
     if (name === 'agentDefaultModel') return { currentSelection: () => ({ provider: 'deepseek', model: 'deepseek-chat' }) }
     if (name === 'directoryPicker') return {
