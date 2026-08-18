@@ -54,6 +54,25 @@ return {
     // timer mixin），bundle 直接用浏览器原生 setInterval/setTimeout 并返回清理函数。
     const interval = (fn, ms) => { const id = setInterval(fn, ms); return () => clearInterval(id) }
     const timeout = (fn, ms) => { const id = setTimeout(fn, ms); return () => clearTimeout(id) }
+    const pad2 = (n) => String(n).padStart(2, '0')
+    const toDateTimeLocalValue = (ms) => {
+      if (!ms) return ''
+      const d = new Date(ms)
+      if (Number.isNaN(d.getTime())) return ''
+      return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + 'T' + pad2(d.getHours()) + ':' + pad2(d.getMinutes())
+    }
+    const parseDateTimeLocalValue = (value) => {
+      const text = String(value || '').trim()
+      if (!text) return null
+      const ms = Date.parse(text)
+      return Number.isFinite(ms) ? ms : null
+    }
+    const formatScheduledAt = (ms) => {
+      if (!ms) return ''
+      const d = new Date(ms)
+      if (Number.isNaN(d.getTime())) return ''
+      return d.toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+    }
 
     styles.insert(`
       .dtp-root { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--dsw-alias-bg-base, #0f1115); }
@@ -432,6 +451,7 @@ return {
           h('span', null, '要素 ' + req.elementCount),
           h('span', null, '验收 ' + req.criterionCount),
           req.workdir ? h('span', { title: '绑定工作目录', style: { color: 'var(--dsw-alias-label-secondary, #9297a5)', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, '📁 ' + req.workdir) : h('span', { style: { color: '#fbbf24' } }, '⚠ 未绑定目录'),
+          req.scheduledAt ? h('span', { title: '计划执行时间', style: { color: req.scheduledAt > Date.now() ? '#a78bfa' : '#34d399' } }, '⏱ ' + formatScheduledAt(req.scheduledAt)) : null,
           req.reworkCount ? h('span', { style: { color: '#fbbf24' } }, '返工 ' + req.reworkCount) : null,
         ),
         progressBlock,
@@ -451,6 +471,7 @@ return {
       const [command, setCommand] = React.useState(req ? req.command || '' : '')
       // 工作目录：编辑沿用需求绑定；新建默认用上次绑定（无则空，提示绑定）
       const [workdir, setWorkdir] = React.useState(req ? (req.workdir || '') : (lastWorkdir || ''))
+      const [scheduledAt, setScheduledAt] = React.useState(req ? toDateTimeLocalValue(req.scheduledAt) : '')
       const [dirPickerOpen, setDirPickerOpen] = React.useState(false)
       const [busy, setBusy] = React.useState(false)
 
@@ -465,6 +486,7 @@ return {
           scope: scope.split(',').map((s) => s.trim()).filter(Boolean),
           command: command.trim() || null,
           workdir: workdir.trim(),
+          scheduledAt: parseDateTimeLocalValue(scheduledAt),
         }
         const method = isEdit ? 'update' : 'create'
         if (isEdit) args.id = req.id
@@ -513,6 +535,15 @@ return {
           h('div', { className: 'dtp-field' },
             h('label', null, '执行命令（可选）'),
             h('input', { value: command, onChange: (e) => setCommand(e.target.value), placeholder: '如: npm test' }),
+          ),
+          h('div', { className: 'dtp-field' },
+            h('label', null, '计划执行时间（可选）'),
+            h('input', {
+              type: 'datetime-local',
+              value: scheduledAt,
+              onChange: (e) => setScheduledAt(e.target.value),
+              title: '留空则进入执行队列后立即执行',
+            }),
           ),
           h('div', { className: 'dtp-modal-actions' },
             h('button', { className: 'dtp-btn', onClick: onClose }, '取消'),

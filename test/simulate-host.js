@@ -244,6 +244,25 @@ async function main() {
   console.log('[6] accept → stage =', a.stage)
   assert(a.stage === 'accepted', '验收通过进入 accepted')
 
+  // 8b. 定时执行：未到时间的排队任务不得提前启动，到点后自动唤醒 pump
+  const scheduledTime = Date.now() + 140
+  const scheduled = await rpc('create', { title: '定时执行测试', description: '应等待计划时间', scheduledAt: scheduledTime })
+  await rpc('dispatch', { id: scheduled.id })
+  await sleep(40)
+  let scheduledView = await rpc('get', { id: scheduled.id })
+  console.log('[6b] scheduled queued → stage =', scheduledView.stage, '| scheduledAt =', scheduledView.scheduledAt)
+  assert(scheduledView.stage === 'queued', '未到计划时间应保持 queued')
+  assert(pendingRuns.length === 0, '未到计划时间不得启动子 agent')
+  await sleep(150)
+  scheduledView = await rpc('get', { id: scheduled.id })
+  console.log('[6c] scheduled due → stage =', scheduledView.stage)
+  assert(scheduledView.stage === 'executing', '到计划时间后应自动进入 executing')
+  assert(pendingRuns.length === 1, '到点后应派发一个子 agent')
+  pendingRuns.shift()()
+  await sleep(80)
+  scheduledView = await rpc('get', { id: scheduled.id })
+  assert(scheduledView.stage === 'accepting', '定时任务完成后进入 accepting')
+
   // 9. 返工流程：B 执行完 → rework(feedback) → 自动重入队列重执行
   const b = await rpc('create', { title: '返工测试', description: '需要测试用例验证' })
   await rpc('dispatch', { id: b.id })

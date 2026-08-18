@@ -148,10 +148,54 @@ return {
     const execQueue = []
     let seqCounter = 0
     let lastWorkdir = null // 上次绑定的工作目录（新建需求时默认值）
+    let pumpTimer = null
 
     function nextId() {
       seqCounter += 1
       return 'RQ-' + Date.now().toString(36).toUpperCase() + '-' + seqCounter
+    }
+
+    function normalizeScheduledAt(value) {
+      if (value === undefined) return undefined
+      if (value === null || value === '') return null
+      if (typeof value === 'number' && Number.isFinite(value)) return value > 0 ? value : null
+      if (typeof value === 'string') {
+        const text = value.trim()
+        if (!text) return null
+        const ms = Date.parse(text)
+        return Number.isFinite(ms) ? ms : null
+      }
+      return null
+    }
+
+    function formatScheduledAt(value) {
+      return value ? new Date(value).toLocaleString() : '立即执行'
+    }
+
+    function schedulePumpAt(timestamp) {
+      if (!timestamp || !Number.isFinite(timestamp)) return
+      if (pumpTimer) {
+        try { clearTimeout(pumpTimer) } catch (e) { /* noop */ }
+        pumpTimer = null
+      }
+      const delay = Math.max(0, Math.min(timestamp - Date.now(), 2147483647))
+      pumpTimer = setTimeout(() => {
+        pumpTimer = null
+        void pump()
+      }, delay)
+    }
+
+    function nextRunnableQueueIndex() {
+      const now = Date.now()
+      let nextAt = null
+      for (let i = 0; i < execQueue.length; i++) {
+        const req = requirements[execQueue[i]]
+        if (!req) return { index: i, nextAt }
+        const scheduledAt = typeof req.scheduledAt === 'number' ? req.scheduledAt : null
+        if (!scheduledAt || scheduledAt <= now) return { index: i, nextAt }
+        if (!nextAt || scheduledAt < nextAt) nextAt = scheduledAt
+      }
+      return { index: -1, nextAt }
     }
 
     // ── 持久化（best effort：失败只告警，不阻断） ──
@@ -357,6 +401,7 @@ return {
         acceptances: [],
         reworkCount: 0,
         reworkReason: null,
+        scheduledAt: normalizeScheduledAt(input.scheduledAt) ?? null,
         createdBy: input.createdBy === 'agent' ? 'agent' : 'user',
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -385,6 +430,9 @@ return {
       for (const k of allowed) {
         if (Object.prototype.hasOwnProperty.call(patch, k) && patch[k] !== undefined) req[k] = patch[k]
       }
+      if (Object.prototype.hasOwnProperty.call(patch, 'scheduledAt')) {
+        req.scheduledAt = normalizeScheduledAt(patch.scheduledAt)
+      }
       if (typeof req.title === 'string') req.title = req.title.trim()
       if (typeof req.workdir === 'string' && req.workdir.trim()) {
         req.workdir = req.workdir.trim()
@@ -393,6 +441,7 @@ return {
       req.updatedAt = Date.now()
       req.version = (req.version || 0) + 1
       persistState()
+      void pump()
       return req
     }
 
@@ -408,9 +457,12 @@ return {
     }
 
     // ── 双队列调度 ─────────────────────────────────────
-    function dispatchToExec(id) {
+    function dispatchToExec(id, options) {
       const req = requirements[id]
       if (!req) throw new Error('需求不存在: ' + id)
+      if (options && Object.prototype.hasOwnProperty.call(options, 'scheduledAt')) {
+        req.scheduledAt = normalizeScheduledAt(options.scheduledAt)
+      }
       const bi = backlog.indexOf(id)
       if (bi >= 0) backlog.splice(bi, 1)
       if (
@@ -472,6 +524,7 @@ return {
         transcript: [],
       })
       req.stage = 'executing'
+      req.scheduledAt = null
       req.updatedAt = Date.now()
       persistState()
     }
@@ -670,6 +723,7 @@ return {
       const lines = [
         '请执行需求 #' + req.id + '「' + req.title + '」。',
         workdir ? '工作目录（请在此目录内完成所有文件操作，先 cd 到该目录）：' + workdir : '',
+        req.scheduledAt ? '计划执行时间：' + formatScheduledAt(req.scheduledAt) + '（当前已到点，开始执行）' : '',
         req.description ? '描述：' + req.description : '',
         '优先级：' + req.priority,
         req.scope && req.scope.length ? '涉及范围：' + req.scope.join(', ') : '',
@@ -722,7 +776,12 @@ return {
     async function pump() {
       if (busy) return
       if (execQueue.length === 0) return
-      const id = execQueue.shift()
+      const runnable = nextRunnableQueueIndex()
+      if (runnable.index < 0) {
+        schedulePumpAt(runnable.nextAt)
+        return
+      }
+      const id = execQueue.splice(runnable.index, 1)[0]
       if (!id || !requirements[id]) {
         persistState()
         void pump()
@@ -855,6 +914,7 @@ return {
         version: req.version,
         command: req.command || null,
         workdir: req.workdir || null,
+        scheduledAt: typeof req.scheduledAt === 'number' ? req.scheduledAt : null,
         // 验收产物：一句话摘要（最新一轮执行总结）
         deliverable: lastExec ? lastExec.summary : '',
         lastSessionId: lastExec ? lastExec.sessionId : null,
@@ -875,6 +935,7 @@ return {
         scope: r.scope,
         command: r.command,
         workdir: r.workdir,
+        scheduledAt: r.scheduledAt,
         reworkCount: r.reworkCount,
         reworkReason: r.reworkReason,
         deliverable: r.deliverable,
@@ -972,7 +1033,7 @@ return {
       }
       return { ok: false, lastWorkdir }
     })
-    handle('dispatch', async (a) => { dispatchToExec(a.id); return stateView() })
+    handle('dispatch', async (a) => { dispatchToExec(a.id, a); return stateView() })
     handle('recall', async (a) => { recallFromExec(a.id); return stateView() })
     handle('top', async (a) => { moveExecTop(a.id); return stateView() })
     handle('accept', async (a) => {
@@ -1056,7 +1117,7 @@ return {
 
     registerTool(defineTool({
       name: 'propose_requirement',
-      description: '提出一个需求：自动拆解构成要素与验收要素，进入需求队列（backlog，不自动执行）。之后可用 dispatch_requirement 丢入执行队列。可指定 workdir 绑定执行目录。',
+      description: '提出一个需求：自动拆解构成要素与验收要素，进入需求队列（backlog，不自动执行）。之后可用 dispatch_requirement 丢入执行队列。可指定 workdir 绑定执行目录，可指定 scheduledAt 定时执行。',
       parameters: {
         type: 'object',
         properties: {
@@ -1067,6 +1128,7 @@ return {
           dependencies: { type: 'array', items: { type: 'string' }, description: '前置需求 ID' },
           command: { type: 'string', description: '可选：执行时运行的命令' },
           workdir: { type: 'string', description: '可选：绑定执行工作目录（子 agent 在该目录完成文件操作）' },
+          scheduledAt: { type: 'string', description: '可选：计划执行时间。支持 ISO/可解析时间字符串；为空表示立即执行。' },
         },
         required: ['title'],
       },
@@ -1076,7 +1138,7 @@ return {
           const req = create(args)
           return '已提出需求 ' + req.id + '「' + req.title + '」，拆解 ' + req.elements.length +
             ' 个构成要素、' + req.acceptanceCriteria.length + ' 项验收要素，已进入需求队列（不自动执行）。' +
-            '调用 dispatch_requirement 丢到执行队列后开始执行。'
+            '调用 dispatch_requirement 丢到执行队列后' + (req.scheduledAt ? '将在 ' + formatScheduledAt(req.scheduledAt) + ' 执行。' : '开始执行。')
         } catch (e) {
           return '提出需求失败：' + (e && e.message ? e.message : String(e))
         }
@@ -1085,7 +1147,7 @@ return {
 
     registerTool(defineTool({
       name: 'edit_requirement',
-      description: '编辑已存在需求的标题/描述/优先级/范围/命令/绑定工作目录。',
+      description: '编辑已存在需求的标题/描述/优先级/范围/命令/绑定工作目录/计划执行时间。',
       parameters: {
         type: 'object',
         properties: {
@@ -1096,6 +1158,7 @@ return {
           scope: { type: 'array', items: { type: 'string' } },
           command: { type: 'string' },
           workdir: { type: 'string', description: '绑定工作目录' },
+          scheduledAt: { type: 'string', description: '计划执行时间；为空表示立即执行。' },
         },
         required: ['requirementId'],
       },
@@ -1127,18 +1190,22 @@ return {
 
     registerTool(defineTool({
       name: 'dispatch_requirement',
-      description: '将需求从需求队列丢到执行队列，排队由子 agent 串行执行。',
+      description: '将需求从需求队列丢到执行队列，排队由子 agent 串行执行；可指定 scheduledAt 在某个时间后执行。',
       parameters: {
         type: 'object',
-        properties: { requirementId: { type: 'string' } },
+        properties: {
+          requirementId: { type: 'string' },
+          scheduledAt: { type: 'string', description: '可选：计划执行时间。支持 ISO/可解析时间字符串；为空表示立即执行。' },
+        },
         required: ['requirementId'],
       },
       output: textOutput,
       async execute(args, exec) {
         try {
           captureSignalCtor(exec && exec.signal)
-          dispatchToExec(args.requirementId)
-          return '需求 ' + args.requirementId + ' 已丢入执行队列排队执行。'
+          dispatchToExec(args.requirementId, args)
+          const req = requirements[args.requirementId]
+          return '需求 ' + args.requirementId + ' 已丢入执行队列' + (req && req.scheduledAt ? '，计划在 ' + formatScheduledAt(req.scheduledAt) + ' 执行。' : '排队执行。')
         } catch (e) {
           return '派发失败：' + (e && e.message ? e.message : String(e))
         }
@@ -1159,7 +1226,7 @@ return {
         const list = args.stage ? all.filter((r) => r.stage === args.stage) : all
         if (!list.length) return '（无' + (args.stage || '任何阶段') + '需求）\n【存储】' + sv.persistDiag + '\n【面板agent】' + (sv.panelDiag || 'not-created')
         return '【存储】' + sv.persistDiag + '\n【面板agent】' + (sv.panelDiag || 'not-created') + '\n' + list.map((r) => '-' + r.id + ' [' + r.priority + '] ' + r.title + '（' + r.stage +
-          (r.reworkCount ? '，返工' + r.reworkCount + '次' : '') + (r.workdir ? '，目录:' + r.workdir : '') + '）').join('\n')
+          (r.reworkCount ? '，返工' + r.reworkCount + '次' : '') + (r.scheduledAt ? '，计划:' + formatScheduledAt(r.scheduledAt) : '') + (r.workdir ? '，目录:' + r.workdir : '') + '）').join('\n')
       },
     }))
 
@@ -1179,6 +1246,7 @@ return {
           '#' + r.id + '「' + r.title + '」 [' + r.priority + '] stage=' + r.stage,
           '描述：' + r.description,
           '工作目录：' + (r.workdir || '（未绑定，用面板默认目录）'),
+          '计划执行：' + (r.scheduledAt ? formatScheduledAt(r.scheduledAt) : '立即执行'),
           '构成要素：' + r.elements.map((e) => e.description).join('；'),
           '验收要素：' + r.acceptanceCriteria.map((a) => '[' + a.id + '] ' + a.description).join('；'),
           '返工：' + r.reworkCount + ' 次' + (r.reworkReason ? '，原因：' + r.reworkReason : ''),
@@ -1255,7 +1323,7 @@ return {
             '需求队列(backlog): ' + byStage('backlog').length,
             ...byStage('backlog').slice(0, 8).map(line),
             '执行队列(queued): ' + byStage('queued').length,
-            ...byStage('queued').slice(0, 8).map(line),
+            ...byStage('queued').slice(0, 8).map((r) => line(r) + (r.scheduledAt ? '（计划 ' + formatScheduledAt(r.scheduledAt) + '）' : '')),
             '执行中(executing): ' + byStage('executing').length,
             '已暂停(paused): ' + byStage('paused').length,
             '待验收(accepting): ' + byStage('accepting').length,
@@ -1293,6 +1361,10 @@ return {
     ctx.effect(() => () => {
       for (const run of runningRuns.values()) {
         try { run.dispose() } catch (e) { /* noop */ }
+      }
+      if (pumpTimer) {
+        try { clearTimeout(pumpTimer) } catch (e) { /* noop */ }
+        pumpTimer = null
       }
       runningRuns.clear()
       if (panelHandle) {

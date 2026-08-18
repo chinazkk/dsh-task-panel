@@ -31,7 +31,7 @@
 任务面板把「提需求 → 执行 → 验收」做成一个六列看板 + 双队列的闭环，挂在 DSH 会话视图里（与「对话 / 轨迹」同级的「任务面板」标签页）：
 
 - **需求队列 (backlog)** —— 提出/编辑/删除需求，自动拆解**构成要素**、生成**验收要素**，不自动执行。
-- **执行队列 (queued)** —— 丢入后排队，由队列 worker 在**子 session** 中派发子 agent **串行**执行（FIFO，同时仅 1 个 executing）；支持置顶 / 撤回。
+- **执行队列 (queued)** —— 丢入后排队，由队列 worker 在**子 session** 中派发子 agent **串行**执行（同时仅 1 个 executing）；支持置顶 / 撤回 / **定时执行**，未到点任务会等待峰谷窗口且不阻塞后续即时任务。
 - **执行中 (executing)** —— 实时进度预览（最近对话流 + 已运行时长），「查看进度」一键**直达对应子代理会话**（会话即实时进度）；可暂停 / 停止。
 - **待验收 (accepting)** —— 执行完成入池，不阻塞后续任务；展示**一句话产物**，可「查看对话」（跳转真实子代理会话，不可跳转时回退对话摘要）。
 - **验收闭环** —— 「通过」→ 验收完成；「返工」→ 填写反馈自动重入执行队列（≤5 次后退回需求队列防死循环）。
@@ -58,13 +58,15 @@ dsh --profile web
 | 阶段 | 你能做什么 |
 | --- | --- |
 | 需求队列 | 新建 / 编辑 / 删除 / 绑定工作目录 / 丢执行 |
-| 执行队列 | 置顶 / 撤回 / 删除 |
+| 执行队列 | 置顶 / 撤回 / 删除 / 定时执行（到点自动启动） |
 | 执行中 | 实时进度预览 · 「查看进度」直达子代理会话 · 暂停 / 停止 |
 | 已暂停 | 恢复（重入执行队列） |
 | 待验收 | 一句话产物 · 查看对话（跳转真实子会话 / 摘要回退）· 通过 / 返工（附反馈） |
 | 验收完成 | 查看对话 · 产物展开/收起 |
 
 主 agent 工具集新增 8 个面板工具：`propose_requirement` / `edit_requirement` / `delete_requirement` / `dispatch_requirement` / `list_requirements` / `get_requirement` / `complete_execution` / `submit_acceptance`。
+
+`propose_requirement`、`edit_requirement`、`dispatch_requirement` 均支持 `scheduledAt`：可传 ISO/可解析时间字符串；为空表示立即执行。适合把低优先级或耗资源任务安排到峰谷时段。
 
 ## 安全与边界
 
@@ -82,7 +84,7 @@ dsh --profile web
 需求队列 (backlog) ── 不自动执行
    │ 丢执行 dispatch_requirement
    ▼
-执行队列 (queued) ── FIFO 串行，可置顶/撤回
+执行队列 (queued) ── 串行，可置顶/撤回/定时；未到点任务不会抢占 worker
    │ 队列 worker：subagents.start() 子 session 执行
    ▼
 执行中 (executing) ── 实时进度 + 直达子代理会话
