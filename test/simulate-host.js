@@ -385,7 +385,9 @@ async function main() {
 
   // 14. 系统提示词段落（systemPrompt.section 回调）
   assert(typeof promptSection === 'function', 'systemPrompt.section 应被注册')
-  const promptText = await promptSection()
+  const promptRaw = promptSection()
+  assert(typeof promptRaw === 'string', 'systemPrompt.section.text 必须同步返回 string，不能返回 Promise（否则运行时 text.indexOf 会失败）')
+  const promptText = promptRaw
   console.log('[13] 提示词段落 →', promptText.split('\n')[0], '（共', promptText.split('\n').length, '行）')
   assert(promptText.includes('需求面板状态'), '提示词段落应含面板状态')
 

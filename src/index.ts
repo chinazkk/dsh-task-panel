@@ -1666,7 +1666,7 @@ return {
         systemPrompt.section({
           name: 'dsh-task-panel:state',
           order: 90,
-          text: async () => {
+          text: () => {
           const sv = stateView()
           const byStage = (s) => sv.requirements.filter((r) => r.stage === s)
           const line = (r) => '-' + r.id + ' [' + r.priority + '] ' + r.title
