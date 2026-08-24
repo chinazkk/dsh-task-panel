@@ -93,7 +93,7 @@ return {
       .dtp-btn.ghost { background: transparent; border-color: #4a5470; color: #dfe3ee; box-shadow: none; }
       .dtp-btn.ghost:hover { background: rgba(255,255,255,.08); border-color: #6d7899; }
       .dtp-btn.small { padding: 3px 10px; font-size: 11px; border-radius: 7px; }
-      .dtp-board { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(6, minmax(170px, 1fr)); gap: 12px; padding: 14px 18px; overflow: auto; }
+      .dtp-board { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(7, minmax(160px, 1fr)); gap: 12px; padding: 14px 18px; overflow: auto; }
       .dtp-col { background: color-mix(in srgb, var(--dsw-alias-bg-layer-1, #171a22) 45%, transparent); border: 1px solid var(--dsw-alias-border-l1, #232735); border-radius: 12px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
       .dtp-col-head { padding: 11px 12px 9px; display: flex; align-items: center; gap: 8px; }
       .dtp-dot { width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 8px currentColor; flex: 0 0 auto; }
@@ -125,6 +125,10 @@ return {
       .dtp-progress.jumpable { cursor: pointer; transition: border-color .15s, background .15s; }
       .dtp-progress.jumpable:hover { border-color: #fbbf24; background: rgba(245, 158, 11, .16); }
       .dtp-progress.jumpable::after { content: '↗ 查看进度（进入会话）'; display: block; margin-top: 4px; font-size: 10px; font-weight: 700; color: #fbbf24; }
+      .dtp-review { display: flex; gap: 6px; align-items: flex-start; margin: 2px 0 8px; padding: 8px 10px; border-radius: 8px; font-size: 11px; line-height: 1.5; word-break: break-all; }
+      .dtp-review.ok { background: rgba(16, 185, 129, .11); border: 1px solid rgba(16, 185, 129, .28); color: #34d399; }
+      .dtp-review.bad { background: rgba(239, 68, 68, .10); border: 1px solid rgba(239, 68, 68, .28); color: #f87171; }
+      .dtp-review .lab { font-weight: 700; flex: 0 0 auto; }
       .dtp-pulse { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #f59e0b; margin-right: 6px; animation: dtp-pulse 1.2s ease-in-out infinite; }
       @keyframes dtp-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.8); } }
       .dtp-badge { font-size: 11px; color: #34d399; font-weight: 600; }
@@ -233,6 +237,7 @@ return {
         { stage: 'backlog', title: '需求队列', color: '#3b82f6', count: byStage('backlog').length },
         { stage: 'queued', title: '执行队列', color: '#8b5cf6', count: byStage('queued').length },
         { stage: 'executing', title: '执行中', color: '#f59e0b', count: byStage('executing').length },
+        { stage: 'reviewing', title: '自动复核', color: '#a855f7', count: byStage('reviewing').length },
         { stage: 'paused', title: '已暂停', color: '#64748b', count: byStage('paused').length },
         { stage: 'accepting', title: '待验收', color: '#10b981', count: byStage('accepting').length },
         { stage: 'accepted', title: '验收完成', color: '#34d399', count: byStage('accepted').length },
@@ -261,6 +266,7 @@ return {
 
       const total = data ? data.requirements.length : 0
       const executing = byStage('executing').length
+      const reviewing = byStage('reviewing').length
       const accepting = byStage('accepting').length
 
       return h('div', { className: 'dtp-root' },
@@ -270,7 +276,7 @@ return {
             h('div', null,
               h('h1', null, '任务面板'),
               h('div', { className: 'sub' },
-                total + ' 条需求' + (executing ? ' · ' + executing + ' 执行中' : '') + (accepting ? ' · ' + accepting + ' 待验收' : '') + ' · 队列在子 session 自动执行'),
+                total + ' 条需求' + (executing ? ' · ' + executing + ' 执行中' : '') + (reviewing ? ' · ' + reviewing + ' 复核中' : '') + (accepting ? ' · ' + accepting + ' 待验收' : '') + ' · 队列在子 session 自动执行'),
             ),
           ),
           h('button', { className: 'dtp-btn primary', onClick: () => setFormReq({ mode: 'create' }) }, '＋ 新建需求'),
@@ -375,6 +381,21 @@ return {
           h('button', { className: 'dtp-btn small', onClick: onPause }, '⏸ 暂停'),
           h('button', { className: 'dtp-btn small danger', onClick: onStop }, '⏹ 停止'),
         )
+      } else if (stage === 'reviewing') {
+        actions = h('div', { className: 'dtp-actions' },
+          h('span', { style: { fontSize: 11, color: '#c084fc', flexBasis: '100%' } },
+            h('span', { className: 'dtp-pulse', style: { background: '#a855f7' } }),
+            '复核 agent 检查中' + (progress && progress.sessionId ? ' · ' + String(progress.sessionId).slice(0, 8) : '') + (progress ? ' · ' + Math.round((progress.elapsedMs || 0) / 1000) + 's' : ''),
+          ),
+          h('button', {
+            className: 'dtp-btn small ok',
+            onClick: onJumpSession,
+            disabled: !(progress && progress.sessionId),
+            title: progress && progress.sessionId ? '查看复核进度 = 跳转到对应子代理会话' : '复核子会话尚未建立',
+          }, '查看复核'),
+          h('button', { className: 'dtp-btn small', onClick: onPause }, '⏸ 暂停'),
+          h('button', { className: 'dtp-btn small danger', onClick: onStop }, '⏹ 停止'),
+        )
       } else if (stage === 'paused') {
         actions = h('div', { className: 'dtp-actions' },
           h('button', { className: 'dtp-btn small primary', onClick: onResume }, '▶ 恢复'),
@@ -397,7 +418,7 @@ return {
 
       // 执行中实时进度预览（最近 3 条）
       let progressBlock = null
-      if (stage === 'executing' && progress && Array.isArray(progress.recent) && progress.recent.length) {
+      if ((stage === 'executing' || stage === 'reviewing') && progress && Array.isArray(progress.recent) && progress.recent.length) {
         const who = { user: '用户', assistant: 'Agent', tool: '工具' }
         const jumpable = !!(progress.sessionId)
         // 进度预览可直接点击跳转到对应子代理会话
@@ -415,6 +436,18 @@ return {
               h('span', { className: 'ptxt' }, String(m.text || '').slice(0, 90)),
             ),
           ),
+        )
+      }
+
+      let reviewBlock = null
+      if ((stage === 'accepting' || stage === 'accepted') && req.reviewCount) {
+        const passed = req.reviewPassed === true
+        const issues = Array.isArray(req.reviewIssues) ? req.reviewIssues : []
+        const text = (req.reviewVerdict || (passed ? '自动复核通过' : '自动复核发现问题')) +
+          (!passed && issues.length ? '；问题：' + issues.slice(0, 3).join('；') : '')
+        reviewBlock = h('div', { className: 'dtp-review ' + (passed ? 'ok' : 'bad'), title: '自动复核结论' },
+          h('span', { className: 'lab' }, passed ? '复核✓' : '复核!'),
+          h('span', null, text),
         )
       }
 
@@ -455,6 +488,7 @@ return {
           req.reworkCount ? h('span', { style: { color: '#fbbf24' } }, '返工 ' + req.reworkCount) : null,
         ),
         progressBlock,
+        reviewBlock,
         deliverableBlock,
         actions,
       )

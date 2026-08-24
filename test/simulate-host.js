@@ -48,12 +48,32 @@ const mockSubagents = {
     runSeq++
     startedReqs.push(request)
     const id = 'sess-mock-' + runSeq
+    const isReview = String(request.label || '').startsWith('复核 ')
+    const seq = runSeq
     let resolveResult
     const result = new Promise((res) => { resolveResult = res })
-    pendingRuns.push(() => resolveResult({
-      output: [{ type: 'text', text: '完成：已创建 demo.txt 并验证内容正确（第 ' + runSeq + ' 轮）' }],
-      stopReason: 'completed',
-    }))
+    pendingRuns.push(() => {
+      if (isReview) {
+        resolveResult({
+          structured: { passed: true, verdict: '自动复核通过：验收要素满足，测试证据充分。', issues: [], suggestions: [] },
+          output: [{ type: 'text', text: '自动复核通过：验收要素满足，测试证据充分。' }],
+          stopReason: 'completed',
+        })
+        return
+      }
+      resolveResult({
+        structured: {
+          done: true,
+          summary: '完成：已创建 demo.txt 并验证内容正确（第 ' + seq + ' 轮）',
+          changedFiles: ['demo.txt'],
+          testCommand: 'npm test',
+          testResult: '通过',
+          blocker: '',
+        },
+        output: [{ type: 'text', text: '完成：已创建 demo.txt 并验证内容正确（第 ' + seq + ' 轮）' }],
+        stopReason: 'completed',
+      })
+    })
     return { id, result, dispose: async () => {} }
   },
 }
@@ -141,6 +161,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 function assert(cond, msg) {
   if (!cond) { console.error('❌ 断言失败:', msg); process.exit(1) }
 }
+async function resolveNextRun(label) {
+  assert(pendingRuns.length > 0, '缺少待完成子 agent：' + label)
+  pendingRuns.shift()()
+  await sleep(80)
+}
+async function finishExecutionAndReview(label) {
+  await resolveNextRun(label + ' 执行')
+  for (let i = 0; i < 10 && pendingRuns.length === 0; i++) await sleep(20)
+  await resolveNextRun(label + ' 复核')
+}
 
 // ── 通过 webServer RPC 路由调用 host 方法（与浏览器 client 完全同路径） ──
 async function rpc(method, args) {
@@ -224,13 +254,19 @@ async function main() {
   assert(p0 && p0.sessionId === 'sess-mock-1', 'progress 应返回执行中会话 id')
   assert(p0 && p0.recent.length >= 1, 'progress 应返回最近对话片段')
 
-  // 6. 完成执行 → accepting + 一句话产物 + transcript
-  pendingRuns.shift()()
-  await sleep(80)
+  // 6. 完成执行 → reviewing → accepting + 一句话产物 + 自动复核结论 + transcript
+  await resolveNextRun('A 执行')
   a = await rpc('get', { id: a.id })
-  console.log('[4] 完成后 stage =', a.stage, '| 产物 =', a.deliverable)
-  console.log('     sessionId =', a.lastSessionId, '| 执行轮次 =', a.executions.length)
+  console.log('[4] 执行完成后 stage =', a.stage, '| 产物 =', a.deliverable)
+  assert(a.stage === 'reviewing', '执行完成后应进入 reviewing 自动复核')
+  assert(a.executions[0].changedFiles.includes('demo.txt'), '结构化执行结果应记录 changedFiles')
+  assert(startedReqs[startedReqs.length - 1].outputSchema, '执行子 agent 请求应携带 outputSchema')
+  await resolveNextRun('A 复核')
+  a = await rpc('get', { id: a.id })
+  console.log('[4b] 复核完成后 stage =', a.stage, '| 复核 =', a.reviewVerdict)
+  console.log('     sessionId =', a.lastSessionId, '| 执行轮次 =', a.executions.length, '| 复核轮次 =', a.reviews.length)
   assert(a.stage === 'accepting', '完成后进入 accepting')
+  assert(a.reviewPassed === true && a.reviews.length === 1, '自动复核通过后应记录 review')
   assert(a.deliverable.includes('demo.txt'), '一句话产物应为交付摘要')
   assert(a.lastSessionId === 'sess-mock-1', '记录子 session id')
 
@@ -258,8 +294,7 @@ async function main() {
   console.log('[6c] scheduled due → stage =', scheduledView.stage)
   assert(scheduledView.stage === 'executing', '到计划时间后应自动进入 executing')
   assert(pendingRuns.length === 1, '到点后应派发一个子 agent')
-  pendingRuns.shift()()
-  await sleep(80)
+  await finishExecutionAndReview('定时任务')
   scheduledView = await rpc('get', { id: scheduled.id })
   assert(scheduledView.stage === 'accepting', '定时任务完成后进入 accepting')
 
@@ -267,8 +302,7 @@ async function main() {
   const b = await rpc('create', { title: '返工测试', description: '需要测试用例验证' })
   await rpc('dispatch', { id: b.id })
   await sleep(30)
-  pendingRuns.shift()() // B 第 1 轮完成
-  await sleep(80)
+  await finishExecutionAndReview('B 第1轮')
   let bv = await rpc('get', { id: b.id })
   assert(bv.stage === 'accepting', 'B 首轮完成应 accepting')
   bv = await rpc('rework', { id: b.id, feedback: '缺少测试用例，请补充单测' })
@@ -277,8 +311,7 @@ async function main() {
   assert(bv.reworkCount === 1, '返工次数应为 1')
   await sleep(30)
   assert(pendingRuns.length === 1, '返工应自动派发第 2 轮子 agent')
-  pendingRuns.shift()() // B 第 2 轮完成
-  await sleep(80)
+  await finishExecutionAndReview('B 第2轮')
   const b2 = await rpc('get', { id: b.id })
   console.log('[8] 返工自动重执行 → stage =', b2.stage, '| 执行轮次 =', b2.executions.length, '| 第2轮返工标记 =', b2.executions[1].isRework)
   assert(b2.stage === 'accepting' && b2.executions.length === 2, '返工自动重执行并回 accepting')
@@ -306,8 +339,17 @@ async function main() {
   assert(sv.backlog.includes(d.id), 'recall 后 D 应退回需求队列')
 
   // 11. 完成剩余任务 C/E，验收通过
-  while (pendingRuns.length) { pendingRuns.shift()(); await sleep(50) }
-  await sleep(80)
+  for (let guard = 0; guard < 20; guard++) {
+    if (pendingRuns.length) {
+      pendingRuns.shift()()
+      await sleep(80)
+      continue
+    }
+    sv = await rpc('state', {})
+    const activeLeft = sv.requirements.some((r) => r.stage === 'executing' || r.stage === 'reviewing' || r.stage === 'queued')
+    if (!activeLeft) break
+    await sleep(50)
+  }
   sv = await rpc('state', {})
   const left = sv.requirements.filter((r) => r.stage === 'executing' || r.stage === 'queued')
   console.log('[11] 全部完成后 stage 分布 =', JSON.stringify(sv.requirements.map((r) => r.id + ':' + r.stage)))
