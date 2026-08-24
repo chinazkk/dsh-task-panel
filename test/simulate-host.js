@@ -218,6 +218,7 @@ async function main() {
   let a = await rpc('create', { title: '创建测试文件', description: '在仓库创建 demo.txt，内容 ok，含测试', priority: 'high', scope: ['src/'] })
   console.log('\n[1] create →', a.id, '| stage =', a.stage, '| 要素 =', a.elements.map((e) => e.category).join(','), '| 验收 =', a.acceptanceCriteria.length)
   assert(a.stage === 'backlog', 'create 后应在 backlog')
+  assert(a.autoReview === true, '新建需求默认应开启自动复核')
   assert(a.elements.length >= 1 && a.acceptanceCriteria.length >= 1, '应自动拆解要素与验收')
 
   // 1b. 持久化：每次写盘必须用新解析的 session 化策略（根 agent cwd = /workspace/demo），
@@ -305,6 +306,18 @@ async function main() {
   await finishExecutionAndReview('定时任务')
   scheduledView = await rpc('get', { id: scheduled.id })
   assert(scheduledView.stage === 'accepting', '定时任务完成后进入 accepting')
+
+  // 8c. 可关闭自动复核：执行成功后直接进入待验收，不启动复核子 agent
+  const noReview = await rpc('create', { title: '免复核测试', description: '执行后直接待验收', autoReview: false })
+  assert(noReview.autoReview === false, '需求应记录 autoReview=false')
+  await rpc('dispatch', { id: noReview.id })
+  await sleep(30)
+  await resolveNextRun('免复核执行')
+  const noReviewView = await rpc('get', { id: noReview.id })
+  console.log('[6d] autoReview=false → stage =', noReviewView.stage, '| 复核轮次 =', noReviewView.reviews.length)
+  assert(noReviewView.stage === 'accepting', '关闭自动复核时执行完成应直接进入 accepting')
+  assert(noReviewView.reviews.length === 0, '关闭自动复核时不得记录 review')
+  assert(pendingRuns.length === 0, '关闭自动复核时不得启动复核子 agent')
 
   // 9. 错误停止：不得伪装成“执行完成”，也不得继续启动自动复核
   const errTask = await rpc('create', { title: '错误停止测试', description: '模拟子 agent stopReason=error' })
