@@ -52,7 +52,11 @@ const mockSubagents = {
     const seq = runSeq
     let resolveResult
     const result = new Promise((res) => { resolveResult = res })
-    pendingRuns.push(() => {
+    pendingRuns.push((override) => {
+      if (override) {
+        resolveResult(override)
+        return
+      }
       if (isReview) {
         resolveResult({
           structured: { passed: true, verdict: '自动复核通过：验收要素满足，测试证据充分。', issues: [], suggestions: [] },
@@ -161,9 +165,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 function assert(cond, msg) {
   if (!cond) { console.error('❌ 断言失败:', msg); process.exit(1) }
 }
-async function resolveNextRun(label) {
+async function resolveNextRun(label, override) {
   assert(pendingRuns.length > 0, '缺少待完成子 agent：' + label)
-  pendingRuns.shift()()
+  pendingRuns.shift()(override)
   await sleep(80)
 }
 async function finishExecutionAndReview(label) {
@@ -233,9 +237,9 @@ async function main() {
   assert(a.title === '创建测试文件（已编辑）', 'update 应生效')
 
   // 3. set-workdir 绑定
-  const wd = await rpc('set-workdir', { workdir: '/workspace/demo/dsh-task-panel' })
+  const wd = await rpc('set-workdir', { workdir: '/workspace/demo/dsh-task-panel/dsh-task-panel' })
   console.log('[2b] set-workdir →', JSON.stringify(wd))
-  assert(wd.ok === true && wd.lastWorkdir === '/workspace/demo/dsh-task-panel', 'set-workdir 应生效')
+  assert(wd.ok === true && wd.lastWorkdir === '/workspace/demo/dsh-task-panel', 'set-workdir 应规范化双层 dsh-task-panel')
 
   // 4. dispatch → executing（手动控制完成）
   await rpc('dispatch', { id: a.id })
@@ -246,6 +250,10 @@ async function main() {
   assert(pendingRuns.length === 1, '应派发一个子 agent')
   assert(a.lastSessionId === 'sess-mock-1', '执行启动后应立即回填会话 id（执行中可追踪）')
   assert(startedReqs[0].signal && startedReqs[0].parent, '子 agent 请求应携带 signal 与 parent')
+  assert(startedReqs[0].parent.session.header.cwd === '/workspace/demo/dsh-task-panel',
+    '面板父 agent cwd 不应拼成 /workspace/demo/dsh-task-panel/dsh-task-panel')
+  assert(startedReqs[0].prompt[0].text.includes('工作目录（请在此目录内完成所有文件操作，先 cd 到该目录）：/workspace/demo/dsh-task-panel'),
+    '执行提示词应使用规范化后的工作目录')
 
   // 5. 实时进度：executing 时 progress RPC 返回会话 id / 父会话 id / 最近对话
   const prog = await rpc('progress', {})
@@ -298,7 +306,20 @@ async function main() {
   scheduledView = await rpc('get', { id: scheduled.id })
   assert(scheduledView.stage === 'accepting', '定时任务完成后进入 accepting')
 
-  // 9. 返工流程：B 执行完 → rework(feedback) → 自动重入队列重执行
+  // 9. 错误停止：不得伪装成“执行完成”，也不得继续启动自动复核
+  const errTask = await rpc('create', { title: '错误停止测试', description: '模拟子 agent stopReason=error' })
+  await rpc('dispatch', { id: errTask.id })
+  await sleep(30)
+  await resolveNextRun('错误停止执行', { output: [], stopReason: 'error' })
+  const errView = await rpc('get', { id: errTask.id })
+  console.log('[6d] stopReason=error → stage =', errView.stage, '| 产物 =', errView.deliverable)
+  assert(errView.stage === 'accepting', '错误停止应直接进入 accepting，等待人工处理')
+  assert(errView.executions[0].done === false && errView.executions[0].stopReason === 'error', '错误停止应记录 done=false 与 stopReason')
+  assert(errView.deliverable.includes('执行失败') && !errView.deliverable.includes('执行完成（stopReason=error）'), '错误停止不得显示为执行完成')
+  assert(errView.reviews.length === 0, '执行失败时不应继续启动自动复核')
+  assert(pendingRuns.length === 0, '执行失败后不应残留复核子 agent')
+
+  // 10. 返工流程：B 执行完 → rework(feedback) → 自动重入队列重执行
   const b = await rpc('create', { title: '返工测试', description: '需要测试用例验证' })
   await rpc('dispatch', { id: b.id })
   await sleep(30)
@@ -317,7 +338,7 @@ async function main() {
   assert(b2.stage === 'accepting' && b2.executions.length === 2, '返工自动重执行并回 accepting')
   assert(b2.executions[1].isRework === true, '第 2 轮标记为返工')
 
-  // 10. 队列排序：C/D/E 并发丢入，测试 top / recall
+  // 11. 队列排序：C/D/E 并发丢入，测试 top / recall
   const c = await rpc('create', { title: 'C' })
   const d = await rpc('create', { title: 'D' })
   const e = await rpc('create', { title: 'E' })
@@ -338,7 +359,7 @@ async function main() {
   assert(sv.execQueue[0] === e.id, 'top 后 E 应在队首')
   assert(sv.backlog.includes(d.id), 'recall 后 D 应退回需求队列')
 
-  // 11. 完成剩余任务 C/E，验收通过
+  // 12. 完成剩余任务 C/E，验收通过
   for (let guard = 0; guard < 20; guard++) {
     if (pendingRuns.length) {
       pendingRuns.shift()()
@@ -355,25 +376,25 @@ async function main() {
   console.log('[11] 全部完成后 stage 分布 =', JSON.stringify(sv.requirements.map((r) => r.id + ':' + r.stage)))
   assert(left.length === 0, 'C/E 均完成执行（D 已在第 10 步撤回 backlog）')
 
-  // 12. list_requirements 工具 execute（走 harness.defineTool 归一化后的 schema）
+  // 13. list_requirements 工具 execute（走 harness.defineTool 归一化后的 schema）
   const listTool = registeredTools.find((t) => t.name === 'list_requirements')
   assert(listTool && typeof listTool.execute === 'function', 'list_requirements 应带 execute')
   const listOut = await listTool.execute({})
   console.log('[12] list_requirements →', String(listOut).split('\n')[0])
   assert(typeof listOut === 'string' && listOut.includes('RQ-'), '工具输出应包含需求')
 
-  // 13. 系统提示词段落（systemPrompt.section 回调）
+  // 14. 系统提示词段落（systemPrompt.section 回调）
   assert(typeof promptSection === 'function', 'systemPrompt.section 应被注册')
   const promptText = await promptSection()
   console.log('[13] 提示词段落 →', promptText.split('\n')[0], '（共', promptText.split('\n').length, '行）')
   assert(promptText.includes('需求面板状态'), '提示词段落应含面板状态')
 
-  // 14. 目录选择 RPC（browse-dir）
+  // 15. 目录选择 RPC（browse-dir）
   const bd = await rpc('browse-dir', { path: '/workspace/demo' })
   console.log('[14] browse-dir → ok =', bd.ok, '| entries =', bd.entries && bd.entries.length)
   assert(bd.ok === true && Array.isArray(bd.entries), 'browse-dir 应可用')
 
-  // 15. remove
+  // 16. remove
   const rm = await rpc('remove', { id: c.id })
   const sv2 = await rpc('state', {})
   console.log('[15] remove →', JSON.stringify(rm), '| 剩余需求 =', sv2.requirements.length)

@@ -196,6 +196,22 @@ return {
       return value ? new Date(value).toLocaleString() : '立即执行'
     }
 
+    function trimPath(value) {
+      return typeof value === 'string' ? value.trim().replace(/\/+$/, '') : ''
+    }
+
+    function normalizePanelWorkdir(value) {
+      const text = trimPath(value)
+      if (!text) return null
+      return text.replace(/(\/dsh-task-panel)+$/, '/dsh-task-panel')
+    }
+
+    function panelProjectDirFrom(baseDir) {
+      const base = normalizePanelWorkdir(baseDir)
+      if (!base) return null
+      return base.endsWith('/dsh-task-panel') ? base : base + '/dsh-task-panel'
+    }
+
     function addEvent(req, type, message, meta) {
       if (!req) return
       req.events = Array.isArray(req.events) ? req.events : []
@@ -266,7 +282,7 @@ return {
     }
     function resolveDataBaseDir() {
       // 1) 需求绑定目录（用户持久化目标，如 <绑定目录根>）
-      if (typeof lastWorkdir === 'string' && lastWorkdir.trim()) return lastWorkdir.trim()
+      if (typeof lastWorkdir === 'string' && lastWorkdir.trim()) return normalizePanelWorkdir(lastWorkdir)
       // 2) 根会话项目区 / 部署 workspaceRoot（旧位置，含历史数据）
       try {
         const root = writePolicy && writePolicy.workspaceRoot ? writePolicy.workspaceRoot : (sandboxPolicy ? sandboxPolicy.workspaceRoot : null)
@@ -314,13 +330,13 @@ return {
         const candidates = []
         // 优先：用户明确指定的持久化目录（需求绑定目录根，代码内可配置）
         if (typeof lastWorkdir === 'string' && lastWorkdir.trim()) {
-          candidates.push(lastWorkdir.trim() + '/.dsh-task-panel/requirements.json')
+          candidates.push(normalizePanelWorkdir(lastWorkdir) + '/.dsh-task-panel/requirements.json')
         }
         try {
           const root = resolveRootAgent()
           const rcwd = root && root.session && root.session.header ? root.session.header.cwd : null
           if (rcwd && typeof rcwd === 'string' && rcwd.length > 4) {
-            candidates.push(rcwd + '/dsh-task-panel/.dsh-task-panel/requirements.json')
+            candidates.push(panelProjectDirFrom(rcwd) + '/.dsh-task-panel/requirements.json')
           }
         } catch (e) { /* noop */ }
         try {
@@ -339,7 +355,7 @@ return {
         let parsed
         try { parsed = JSON.parse(text) } catch (e) { return }
         if (parsed && typeof parsed.lastWorkdir === 'string' && parsed.lastWorkdir) {
-          lastWorkdir = parsed.lastWorkdir
+          lastWorkdir = normalizePanelWorkdir(parsed.lastWorkdir)
           if (lastWorkdir !== resolveDataBaseDir()) {
             // lastWorkdir 已存在且目标变了 → 迁移到新位置
             dataTarget = null
@@ -360,7 +376,7 @@ return {
         }
         if (Array.isArray(final.backlog)) { backlog.length = 0; backlog.push(...final.backlog) }
         if (Array.isArray(final.execQueue)) { execQueue.length = 0; execQueue.push(...final.execQueue) }
-        if (typeof final.lastWorkdir === 'string' && final.lastWorkdir) lastWorkdir = final.lastWorkdir
+        if (typeof final.lastWorkdir === 'string' && final.lastWorkdir) lastWorkdir = normalizePanelWorkdir(final.lastWorkdir)
       } catch (e) { /* 首次运行没有数据 */ }
     }
 
@@ -436,7 +452,7 @@ return {
         priority: ['critical', 'high', 'medium', 'low'].includes(input.priority) ? input.priority : 'medium',
         stage: 'backlog',
         // 需求绑定的工作目录（子 agent 在该目录下执行；未绑定则用面板默认目录）
-        workdir: typeof input.workdir === 'string' && input.workdir.trim() ? input.workdir.trim() : (lastWorkdir || null),
+        workdir: typeof input.workdir === 'string' && input.workdir.trim() ? normalizePanelWorkdir(input.workdir) : (normalizePanelWorkdir(lastWorkdir) || null),
         elements,
         scope: (input.scope || []).slice(),
         dependencies: (input.dependencies || []).slice(),
@@ -483,7 +499,7 @@ return {
       }
       if (typeof req.title === 'string') req.title = req.title.trim()
       if (typeof req.workdir === 'string' && req.workdir.trim()) {
-        req.workdir = req.workdir.trim()
+        req.workdir = normalizePanelWorkdir(req.workdir)
         if (req.workdir !== lastWorkdir) { lastWorkdir = req.workdir; persistState() }
       }
       req.updatedAt = Date.now()
@@ -599,9 +615,12 @@ return {
           exec.blocker = typeof meta.blocker === 'string' ? meta.blocker : ''
         }
       }
-      req.stage = meta && meta.skipReview ? 'accepting' : 'reviewing'
+      const failed = meta && meta.done === false
+      req.stage = meta && (meta.skipReview || failed) ? 'accepting' : 'reviewing'
       req.updatedAt = Date.now()
-      addEvent(req, 'execution-completed', (meta && meta.skipReview) ? '执行完成，已进入待验收' : '执行完成，进入自动复核', {
+      addEvent(req, failed ? 'execution-failed' : 'execution-completed',
+        failed ? '执行未正常完成，已进入待验收'
+          : ((meta && meta.skipReview) ? '执行完成，已进入待验收' : '执行完成，进入自动复核'), {
         sessionId: meta && meta.sessionId ? meta.sessionId : null,
       })
       persistState()
@@ -730,7 +749,7 @@ return {
           // 面板专属工作目录：优先用最近绑定的需求目录所在项目，否则 <根agent cwd>/dsh-task-panel
           const rootCwd = root.session && root.session.header ? root.session.header.cwd : null
           const baseDir = rootCwd && typeof rootCwd === 'string' ? rootCwd : (sandboxPolicy ? sandboxPolicy.workspaceRoot : null)
-          const panelCwd = baseDir ? baseDir + '/dsh-task-panel' : null
+          const panelCwd = panelProjectDirFrom(baseDir)
           // 继承根 agent 的模型选择，确保 {{model}} 有值
           const agentOptions = {}
           try {
@@ -791,8 +810,8 @@ return {
         const sessionCwd = parent && parent.session && parent.session.header
           ? parent.session.header.cwd : null
         if (!sessionCwd || typeof sessionCwd !== 'string') return null
-        // 面板自己的项目目录：<面板agent工作区>/dsh-task-panel
-        const candidate = sessionCwd + '/dsh-task-panel'
+        // 面板自己的项目目录：若父级已经在 dsh-task-panel 内，直接复用，避免拼成双层目录。
+        const candidate = panelProjectDirFrom(sessionCwd)
         if (fs) {
           try {
             const t = await fs.resolve(candidate)
@@ -829,7 +848,7 @@ return {
     function buildPrompt(req, execDir) {
       // 工作目录优先级：需求绑定 workdir > 面板默认执行目录
       const workdir = (req.workdir && typeof req.workdir === 'string' && req.workdir.trim())
-        ? req.workdir.trim()
+        ? normalizePanelWorkdir(req.workdir)
         : (execDir || null)
       const lines = [
         '请执行需求 #' + req.id + '「' + req.title + '」。',
@@ -873,27 +892,42 @@ return {
       return result && result.structured && typeof result.structured === 'object' ? result.structured : null
     }
 
+    function isErrorStopReason(stopReason) {
+      if (!stopReason) return false
+      return !['completed', 'stop', 'end_turn', 'done'].includes(String(stopReason))
+    }
+
     function normalizedExecutionResult(result) {
       const s = structuredOf(result) || {}
       const fallback = extractText(result && result.output)
+      const stopReason = result && result.stopReason ? String(result.stopReason) : ''
+      const stoppedWithError = isErrorStopReason(stopReason)
+      const diagnostic = stopReason
+        ? '子 agent 以 stopReason=' + stopReason + ' 结束' + (fallback ? '。' : '，未返回可用输出。')
+        : '子 agent 未返回结构化执行结果。'
       return {
-        done: s.done === false ? false : true,
-        summary: String(s.summary || fallback || '执行完成（stopReason=' + (result && result.stopReason) + '）'),
+        done: stoppedWithError ? false : (s.done === false ? false : true),
+        summary: String(s.summary || fallback || (stoppedWithError ? '执行失败：' + diagnostic : '执行完成')),
         changedFiles: Array.isArray(s.changedFiles) ? s.changedFiles.map((x) => String(x)).filter(Boolean).slice(0, 80) : [],
         testCommand: String(s.testCommand || ''),
         testResult: String(s.testResult || ''),
-        blocker: String(s.blocker || ''),
+        blocker: String(s.blocker || (stoppedWithError ? diagnostic : '')),
       }
     }
 
     function normalizedReviewResult(result) {
       const s = structuredOf(result) || {}
       const fallback = extractText(result && result.output)
+      const stopReason = result && result.stopReason ? String(result.stopReason) : ''
+      const stoppedWithError = isErrorStopReason(stopReason)
+      const diagnostic = stopReason
+        ? '复核子 agent 以 stopReason=' + stopReason + ' 结束' + (fallback ? '。' : '，未返回可用输出。')
+        : '复核子 agent 未返回结构化结果。'
       return {
-        passed: s.passed === true,
-        verdict: String(s.verdict || fallback || ''),
-        issues: Array.isArray(s.issues) ? s.issues.map((x) => String(x)).filter(Boolean).slice(0, 50) : [],
-        suggestions: Array.isArray(s.suggestions) ? s.suggestions.map((x) => String(x)).filter(Boolean).slice(0, 50) : [],
+        passed: stoppedWithError ? false : s.passed === true,
+        verdict: String(s.verdict || fallback || (stoppedWithError ? '自动复核失败：' + diagnostic : '')),
+        issues: Array.isArray(s.issues) ? s.issues.map((x) => String(x)).filter(Boolean).slice(0, 50) : (stoppedWithError ? [diagnostic] : []),
+        suggestions: Array.isArray(s.suggestions) ? s.suggestions.map((x) => String(x)).filter(Boolean).slice(0, 50) : (stoppedWithError ? ['查看复核子会话或重新执行该需求。'] : []),
       }
     }
 
@@ -1084,16 +1118,19 @@ return {
             testCommand: execResult.testCommand,
             testResult: execResult.testResult,
             blocker: execResult.blocker,
+            skipReview: execResult.done === false,
           })
-          try {
-            await runReview(id, parent)
-          } catch (reviewErr) {
-            completeReview(id, {
-              passed: false,
-              verdict: '自动复核异常：' + (reviewErr && reviewErr.message ? reviewErr.message : String(reviewErr)),
-              issues: ['自动复核未能完成，请人工检查执行结果。'],
-              suggestions: ['查看执行子会话与改动文件后再验收。'],
-            }, { stopReason: 'review-error' })
+          if (execResult.done !== false) {
+            try {
+              await runReview(id, parent)
+            } catch (reviewErr) {
+              completeReview(id, {
+                passed: false,
+                verdict: '自动复核异常：' + (reviewErr && reviewErr.message ? reviewErr.message : String(reviewErr)),
+                issues: ['自动复核未能完成，请人工检查执行结果。'],
+                suggestions: ['查看执行子会话与改动文件后再验收。'],
+              }, { stopReason: 'review-error' })
+            }
           }
         }
       } catch (err) {
@@ -1239,7 +1276,7 @@ return {
         execQueue: execQueue.slice(),
         maxRework: MAX_REWORK,
         persistDiag,
-        lastWorkdir,
+        lastWorkdir: normalizePanelWorkdir(lastWorkdir),
         panelDiag,
       }
     }
@@ -1314,11 +1351,11 @@ return {
     handle('set-workdir', async (a) => {
       // 全局默认工作目录：新建需求未指定时沿用
       if (typeof a.workdir === 'string' && a.workdir.trim()) {
-        lastWorkdir = a.workdir.trim()
+        lastWorkdir = normalizePanelWorkdir(a.workdir)
         persistState()
         return { ok: true, lastWorkdir }
       }
-      return { ok: false, lastWorkdir }
+      return { ok: false, lastWorkdir: normalizePanelWorkdir(lastWorkdir) }
     })
     handle('dispatch', async (a) => { dispatchToExec(a.id, a); return stateView() })
     handle('recall', async (a) => { recallFromExec(a.id); return stateView() })
