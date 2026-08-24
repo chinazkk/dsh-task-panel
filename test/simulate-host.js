@@ -194,7 +194,7 @@ async function main() {
   console.log('■ Host bundle:', path.relative(repoRoot, 'lib/index.js'))
   console.log('  name =', hostMod.name, '| inject =', JSON.stringify(hostMod.inject))
   assert(hostMod.name === 'dsh-task-panel', 'bundle 应导出 name=dsh-task-panel')
-  assert(Array.isArray(hostMod.inject) && hostMod.inject.includes('subagents') && hostMod.inject.includes('agents') && hostMod.inject.includes('tools'), 'inject 应含 subagents/agents/tools')
+  assert(Array.isArray(hostMod.inject) && hostMod.inject.includes('subagents') && hostMod.inject.includes('agents') && hostMod.inject.includes('tools') && hostMod.inject.includes('directoryPicker'), 'inject 应含 subagents/agents/tools/directoryPicker')
   hostMod.apply(ctx)
   console.log('✅ apply 激活 | 工具数 =', registeredTools.length, '| 事件钩子 =', Object.keys(listeners).join(','))
   assert(registeredTools.length === 8, '应注册 8 个 Agent 工具，实际 ' + registeredTools.length)

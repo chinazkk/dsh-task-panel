@@ -615,9 +615,10 @@ return {
             setPath(r.path || initial || '')
           } else if (r && r.native) {
             setMode('native')
+            setError(null)
           } else {
             setMode('browse')
-            setError(r && r.error ? r.error : '目录浏览不可用')
+            setError((r && r.error ? r.error : '目录浏览不可用') + '；也可以关闭弹窗后直接在输入框粘贴路径。')
           }
         }).catch(() => { if (!cancelled) setMode('browse') })
         return () => { cancelled = true }

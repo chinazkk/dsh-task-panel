@@ -76,7 +76,7 @@ const plugin = (() => {
 // ─────────────────────────────────────────────────────────────
 
 return {
-  inject: ['subagents', 'agents'],
+  inject: ['subagents', 'agents', 'directoryPicker'],
   apply(ctx) {
     const subagents = ctx.subagents
     const agents = ctx.agents
