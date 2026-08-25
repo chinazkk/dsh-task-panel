@@ -31,7 +31,9 @@
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.client.json && tsdown",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit",
     "test": "node test/simulate-host.js",
-    "check": "npm run build && npm test"
+    "check": "npm run build && npm test",
+    "tree": "node scripts/file-tree.js",
+    "tree:verify": "node scripts/file-tree.js --verify"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=0.1.0",
