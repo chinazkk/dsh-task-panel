@@ -1,7 +1,7 @@
 {
   "name": "dsh-task-panel",
   "version": "1.0.0",
-  "description": "DeepSeek Harness 任务面板插件（DSH bundle 形态）：六列看板 + 需求/执行双队列 + 子 session 串行执行 + 验收（一句话产物 / 跳转真实子代理对话 / 返工反馈 / 暂停停止恢复）+ 需求绑定工作目录。Host + Client 双半，`dsh plugin add` 即装即用。",
+  "description": "DSH Web 任务面板插件：把需求、队列、子 agent 执行、自动复核、验收返工和定时执行做成一个可视化闭环。",
   "license": "MIT",
   "type": "module",
   "main": "lib/index.js",
@@ -42,6 +42,19 @@
     "react": ">=18.0.0"
   },
   "dsh": {
+    "about": {
+      "title": "DSH Task Panel",
+      "summary": "把 DSH 会话变成可排队、可复核、可验收的 AI 任务看板。",
+      "description": "适合把零散需求沉淀成可追踪任务：在 Web 会话里新建需求、绑定目录、关联历史会话，按队列或指定时间派发子 agent 执行，自动复核后进入待验收，支持通过、返工、暂停、停止和恢复。",
+      "highlights": [
+        "七列看板覆盖需求、执行、复核、验收全流程",
+        "子 agent 串行执行，避免多个任务互相抢上下文",
+        "支持定时执行、自动复核、历史会话关联和工作目录绑定",
+        "失败 stopReason、子会话链接、测试证据和返工记录全保留"
+      ],
+      "screenshot": "assets/screenshots/task-panel-board.webp",
+      "docs": "docs/ABOUT.md"
+    },
     "bundle": {
       "patch": "cordis.patch.yml"
     },
@@ -62,7 +75,11 @@
     "kanban",
     "task-queue",
     "requirements",
+    "requirements-management",
     "subagent",
+    "agent-workflow",
+    "scheduled-tasks",
+    "auto-review",
     "deepseek"
   ],
   "engines": {

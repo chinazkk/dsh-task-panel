@@ -11,7 +11,7 @@
 ```bash
 git clone https://github.com/chinazkk/dsh-task-panel.git
 cd dsh-task-panel
-npm run check   # build（tsc ×2 + tsdown 出 lib/）+ 15 组断言冒烟测试（bundle host + client）
+npm run check   # build（tsc ×2 + tsdown 出 lib/）+ 18 组断言冒烟测试（bundle host + client）
 ```
 
 插件全部可部署代码：
@@ -78,7 +78,7 @@ dsh plugin --profile web remove dsh-task-panel   # 移除依赖 + bundles 层
 npm install          # 仅需 typescript + tsdown（本仓库 dev 依赖，或指向本地 DSH checkout 的符号链接）
 npm run build        # tsc host + tsc client + tsdown → lib/
 npm run typecheck
-npm test             # 15 组断言冒烟测试（bundle host 全流程 + client handoff）
+npm test             # 18 组断言冒烟测试（bundle host 全流程 + client handoff）
 dsh plugin --profile web add .   # 装本地目录，改代码后重新 build 即可热更新
 ```
 

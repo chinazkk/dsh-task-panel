@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <strong>任务面板（Task Panel）—— DeepSeek Harness (DSH) 插件：七列看板 + 双队列任务队列，在子 session 中由 agent 串行执行需求，可选自动复核，并完成验收闭环。</strong>
+  <strong>把 DeepSeek Harness 会话升级成 AI 任务看板：排队执行、定时低峰运行、自动复核、验收返工、历史会话关联，一屏闭环。</strong>
 </p>
 
 <p align="center">
@@ -25,6 +25,18 @@
 </p>
 
 > 上图为任务面板看板示例；新版流程为：需求队列 → 执行队列 → 执行中（实时进度预览，可一键直达子代理会话）→ 可选自动复核 → 已暂停 → 待验收（一句话产物 + 可选复核结论）→ 验收完成。
+
+## 为什么值得装
+
+如果你经常在 DSH 里连续丢多个需求，最痛的通常不是 agent 不会做，而是任务散在聊天里：哪个已排队、哪个正在跑、哪个要复核、哪个等你验收，时间久了很容易失焦。`dsh-task-panel` 把这些散落的对话收束成一个可视化任务流。
+
+- **更稳的执行节奏**：双队列 + 子 agent 串行执行，避免多个任务一起抢上下文或互相覆盖。
+- **更省心的低峰执行**：每个任务可指定计划时间，适合把耗资源任务安排到峰谷窗口。
+- **更像真实交付流程**：执行完成后可自动复核，但最终通过/返工仍由你决定。
+- **更少重复说明**：创建需求时可扫描并勾选相关历史会话，执行 prompt 自动带摘要和 sessionId。
+- **更容易排错**：保留 stopReason、子会话链接、测试证据、复核结论和返工记录。
+
+适合：持续维护插件/网站/脚本的小团队、个人自动化工作流、需要把 AI 编程任务排队跑完并保留验收痕迹的 DSH 用户。
 
 ## 这是什么
 
@@ -133,6 +145,7 @@ dsh plugin --profile web add .    # 装本地目录，改代码后重新 build �
 
 ## 项目文档
 
+- 项目介绍 / GitHub About 建议：[`docs/ABOUT.md`](docs/ABOUT.md)
 - 安装 / 升级 / 排障：[`docs/INSTALL-GUIDE.md`](docs/INSTALL-GUIDE.md)
 - 依赖清单（peer 依赖 / Host 服务 / Client 服务 / 构建期）：[`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md)
 - 架构设计（本地化）：[`docs/architecture.html`](docs/architecture.html)
