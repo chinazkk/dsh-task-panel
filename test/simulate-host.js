@@ -28,6 +28,7 @@ const registeredTools = [] // 记录 ctx.tools.register 收到的工具定义
 const rpcRoute = {}        // webServer.register 捕获的 RPC 路由
 let promptSection = null   // systemPrompt.section 捕获的回调
 const sessionSearchRequests = []
+const LONG_TEST_RESULT = '验证日志-' + 'x'.repeat(900)
 
 const mockSessionQuery = {
   searchSessions: async (request) => {
@@ -95,7 +96,7 @@ const mockSubagents = {
           summary: '完成：已创建 demo.txt 并验证内容正确（第 ' + seq + ' 轮）',
           changedFiles: ['demo.txt'],
           testCommand: 'npm test',
-          testResult: '通过',
+          testResult: LONG_TEST_RESULT,
           blocker: '',
         },
         output: [{ type: 'text', text: '完成：已创建 demo.txt 并验证内容正确（第 ' + seq + ' 轮）' }],
@@ -298,6 +299,10 @@ async function main() {
   assert(a.stage === 'reviewing', '执行完成后应进入 reviewing 自动复核')
   assert(a.executions[0].changedFiles.includes('demo.txt'), '结构化执行结果应记录 changedFiles')
   assert(startedReqs[startedReqs.length - 1].outputSchema, '执行子 agent 请求应携带 outputSchema')
+  const reviewPrompt = startedReqs[startedReqs.length - 1].prompt[0].text
+  assert(reviewPrompt.includes('参考产物（压缩）'), '复核提示词应使用压缩参考产物')
+  assert(reviewPrompt.includes('验证结果（压缩）'), '复核提示词应标记压缩验证结果')
+  assert(!reviewPrompt.includes(LONG_TEST_RESULT), '复核提示词不得塞入完整长验证结果')
   await resolveNextRun('A 复核')
   a = await rpc('get', { id: a.id })
   console.log('[4b] 复核完成后 stage =', a.stage, '| 复核 =', a.reviewVerdict)
@@ -460,6 +465,8 @@ async function main() {
     'client bundle 不得调用 ctx.interval/ctx.timeout（应用级上下文无 timer，会导致面板空白）')
   assert(clientSrc.includes('setInterval(') && clientSrc.includes('setTimeout('),
     'client bundle 应使用浏览器原生 setInterval/setTimeout 轮询')
+  assert(clientSrc.includes('展示更多（还有 ') && clientSrc.includes("items.slice(0, 5)"),
+    'client bundle 应限制验收完成列默认最多展示 5 条，并提供展示更多入口')
   let handoff = null
   const sandbox = {
     window: { __ModuleLoader__: { load: (h) => { handoff = h } } },
