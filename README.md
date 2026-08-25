@@ -32,7 +32,7 @@
 
 - **需求队列 (backlog)** —— 提出/编辑/删除需求，自动拆解**构成要素**、生成**验收要素**，不自动执行。
 - **执行队列 (queued)** —— 丢入后排队，由队列 worker 在**子 session** 中派发子 agent **串行**执行（同时仅 1 个 executing）；支持置顶 / 撤回 / **定时执行**，未到点任务会等待峰谷窗口且不阻塞后续即时任务。
-- **执行中 (executing)** —— 实时进度预览（最近对话流 + 已运行时长），「查看进度」一键**直达对应子代理会话**（会话即实时进度）；执行 agent 输出结构化交付：`done / summary / changedFiles / testCommand / testResult / blocker`。若子 agent 以 `stopReason=error` 结束，会明确标记为执行失败并直接进入待验收，方便人工查看和返工。
+- **执行中 (executing)** —— 实时进度预览（最近对话流 + 已运行时长），「查看进度」一键**直达对应子代理会话**（会话即实时进度）；执行 prompt 会带上已关联历史会话的 sessionId 和摘要片段；执行 agent 输出结构化交付：`done / summary / changedFiles / testCommand / testResult / blocker`。若子 agent 以 `stopReason=error` 结束，会明确标记为执行失败并直接进入待验收，方便人工查看和返工。
 - **自动复核 (reviewing)** —— 每条需求可单独开启；开启后，执行完成会启动复核 agent，对照验收要素、改动文件和测试证据输出 `passed / verdict / issues / suggestions`，不直接替用户通过或打回。
 - **待验收 (accepting)** —— 展示**一句话产物 + 可选自动复核结论**，可「查看对话」（跳转真实子代理会话，不可跳转时回退对话摘要）。
 - **验收闭环** —— 「通过」→ 验收完成；「返工」→ 填写反馈自动重入执行队列（≤5 次后退回需求队列防死循环）。
@@ -40,7 +40,7 @@
 
 ## 推荐用法
 
-1. 在「需求队列」点 **新建需求**，填标题、描述、绑定工作目录；耗资源任务可设置「计划执行时间」放到低峰时段，也可按需勾选「自动复核」。
+1. 在「需求队列」点 **新建需求**，填标题、描述、绑定工作目录；面板会自动扫描相关历史会话，也可手动勾选关联；耗资源任务可设置「计划执行时间」放到低峰时段，也可按需勾选「自动复核」。
 2. 点 **丢执行** 后任务进入执行队列。未到点的任务会等待，且不会阻塞后面的即时任务。
 3. 勾选「自动复核」的任务执行完成后会进入 **自动复核**；未勾选的任务会直接进入「待验收」。
 4. 在「待验收」里查看一句话产物；若开启过自动复核，会同时显示复核结论。你仍然拥有最终决定权。
@@ -81,6 +81,8 @@ dsh --profile web
 
 `propose_requirement`、`edit_requirement` 还支持 `autoReview`：`true` 表示执行完成后启动复核 agent，`false` 表示直接进入待验收。UI 新建需求默认勾选，可手动取消。
 
+新建/编辑需求支持历史会话关联：UI 会根据标题/描述调用 `sessionQuery.searchSessions` 扫描候选会话，用户可勾选保留；工具/API 可传 `contextAnchors`（元素含 `sessionId/title/snippet/cwd`）。执行 prompt 会注入这些历史会话的摘要与 sessionId，帮助子 agent 复用旧上下文。
+
 ## 安全与边界
 
 - **持久化**：状态写入**需求绑定目录根**下的 `.dsh-task-panel/requirements.json`（未绑定时回退部署 workspaceRoot，并自动迁移历史数据）；写入显式携带 `workspace-write` 沙箱策略，策略根按**根会话 cwd** 解析，绑定目录在会话工作区内即可落盘。
@@ -114,7 +116,7 @@ dsh --profile web
 | 文件 | 平台 | 职责 |
 | --- | --- | --- |
 | `src/index.ts` → `lib/index.js` | Host | 数据模型 + 状态机 + 双队列调度 + 执行/复核子 session 派发 + 8 个 Agent 工具 + Client RPC（webServer 路由桥）+ 持久化 |
-| `src/client/index.ts` → `lib/client.js` | Client（浏览器 bundle） | 七列看板 + 需求表单 + 可选复核结论 + 验收面板；经 `/plugins/dsh-task-panel/rpc` 调 Host |
+| `src/client/index.ts` → `lib/client.js` | Client（浏览器 bundle） | 七列看板 + 需求表单 + 历史会话勾选 + 可选复核结论 + 验收面板；经 `/plugins/dsh-task-panel/rpc` 调 Host |
 | `cordis.patch.yml` | bundle 层 | 向 profile 插入 `dsh-task-panel` 插件行 |
 
 Host/Client 通信：浏览器 Client 通过 `fetch('/plugins/dsh-task-panel/rpc')` 调用 Host 在 `webServer` 注册的 RPC 路由。
@@ -124,7 +126,7 @@ Host/Client 通信：浏览器 Client 通过 `fetch('/plugins/dsh-task-panel/rpc
 ```bash
 npm run build      # tsc（Host+Client 半）→ lib/，tsdown 打包浏览器 bundle lib/client.js
 npm run typecheck
-npm test           # 17 组断言冒烟测试：bundle host 全流程 + 可选自动复核 + 异常停止 + client handoff + 真实渲染回归
+npm test           # 18 组断言冒烟测试：bundle host 全流程 + 历史会话关联 + 可选自动复核 + 异常停止 + client handoff + 真实渲染回归
 npm run check      # build + test
 dsh plugin --profile web add .    # 装本地目录，改代码后重新 build 即可
 ```

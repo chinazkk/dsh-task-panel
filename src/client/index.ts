@@ -129,6 +129,12 @@ return {
       .dtp-review.ok { background: rgba(16, 185, 129, .11); border: 1px solid rgba(16, 185, 129, .28); color: #34d399; }
       .dtp-review.bad { background: rgba(239, 68, 68, .10); border: 1px solid rgba(239, 68, 68, .28); color: #f87171; }
       .dtp-review .lab { font-weight: 700; flex: 0 0 auto; }
+      .dtp-session-list { display: flex; flex-direction: column; gap: 6px; max-height: 150px; overflow: auto; }
+      .dtp-session-option { display: flex; gap: 8px; align-items: flex-start; padding: 7px 9px; border: 1px solid var(--dsw-alias-border-l1, #2c3140); border-radius: 8px; background: rgba(255,255,255,.035); cursor: pointer; }
+      .dtp-session-option input { width: 14px; height: 14px; margin-top: 2px; flex: 0 0 auto; accent-color: #3b82f6; }
+      .dtp-session-option .main { flex: 1; min-width: 0; }
+      .dtp-session-option .sid { color: var(--dsw-alias-label-primary, #ececf1); font-size: 11px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .dtp-session-option .snip { color: var(--dsw-alias-label-secondary, #9297a5); font-size: 10.5px; line-height: 1.4; margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
       .dtp-pulse { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #f59e0b; margin-right: 6px; animation: dtp-pulse 1.2s ease-in-out infinite; }
       @keyframes dtp-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.8); } }
       .dtp-badge { font-size: 11px; color: #34d399; font-weight: 600; }
@@ -488,6 +494,7 @@ return {
           h('span', null, '要素 ' + req.elementCount),
           h('span', null, '验收 ' + req.criterionCount),
           h('span', { title: req.autoReview === false ? '执行完成后不启动复核 agent' : '执行完成后自动启动复核 agent', style: { color: req.autoReview === false ? '#fbbf24' : '#a78bfa' } }, req.autoReview === false ? '免复核' : '自动复核'),
+          req.contextAnchors && req.contextAnchors.length ? h('span', { title: '已关联历史会话', style: { color: '#34d399' } }, '会话 ' + req.contextAnchors.length) : null,
           req.workdir ? h('span', { title: '绑定工作目录', style: { color: 'var(--dsw-alias-label-secondary, #9297a5)', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, '📁 ' + req.workdir) : h('span', { style: { color: '#fbbf24' } }, '⚠ 未绑定目录'),
           req.scheduledAt ? h('span', { title: '计划执行时间', style: { color: req.scheduledAt > Date.now() ? '#a78bfa' : '#34d399' } }, '⏱ ' + formatScheduledAt(req.scheduledAt)) : null,
           req.reworkCount ? h('span', { style: { color: '#fbbf24' } }, '返工 ' + req.reworkCount) : null,
@@ -512,8 +519,45 @@ return {
       const [workdir, setWorkdir] = React.useState(req ? (req.workdir || '') : (lastWorkdir || ''))
       const [scheduledAt, setScheduledAt] = React.useState(req ? toDateTimeLocalValue(req.scheduledAt) : '')
       const [autoReview, setAutoReview] = React.useState(req ? req.autoReview !== false : true)
+      const [sessionCandidates, setSessionCandidates] = React.useState(req && Array.isArray(req.contextAnchors) ? req.contextAnchors : [])
+      const [selectedSessionIds, setSelectedSessionIds] = React.useState(req && Array.isArray(req.contextAnchors) ? req.contextAnchors.map((s) => s.sessionId) : [])
+      const [sessionLoading, setSessionLoading] = React.useState(false)
       const [dirPickerOpen, setDirPickerOpen] = React.useState(false)
       const [busy, setBusy] = React.useState(false)
+
+      const loadSessionCandidates = React.useCallback(() => {
+        const qTitle = title.trim()
+        const qDesc = description.trim()
+        if (!qTitle && !qDesc) return
+        setSessionLoading(true)
+        host.call('suggest-sessions', {
+          title: qTitle,
+          description: qDesc,
+          scope: scope.split(',').map((s) => s.trim()).filter(Boolean),
+          limit: 6,
+        }).then((r) => {
+          setSessionLoading(false)
+          const items = r && Array.isArray(r.items) ? r.items : []
+          setSessionCandidates((prev) => {
+            const map = new Map()
+            for (const item of [...(prev || []), ...items]) if (item && item.sessionId) map.set(item.sessionId, item)
+            return Array.from(map.values()).slice(0, 8)
+          })
+          if (!isEdit && selectedSessionIds.length === 0) {
+            setSelectedSessionIds(items.slice(0, 3).map((x) => x.sessionId).filter(Boolean))
+          }
+        }).catch(() => setSessionLoading(false))
+      }, [title, description, scope, isEdit, selectedSessionIds.length])
+
+      React.useEffect(() => {
+        if (isEdit) return
+        const disposer = timeout(() => loadSessionCandidates(), 500)
+        return () => { if (typeof disposer === 'function') disposer() }
+      }, [isEdit, loadSessionCandidates])
+
+      const toggleSession = (sessionId) => {
+        setSelectedSessionIds((prev) => prev.includes(sessionId) ? prev.filter((id) => id !== sessionId) : [...prev, sessionId])
+      }
 
       const save = () => {
         if (!title.trim()) { onToast('标题不能为空'); return }
@@ -528,6 +572,9 @@ return {
           workdir: workdir.trim(),
           scheduledAt: parseDateTimeLocalValue(scheduledAt),
           autoReview,
+        }
+        if (sessionCandidates.length > 0) {
+          args.contextAnchors = sessionCandidates.filter((s) => selectedSessionIds.includes(s.sessionId))
         }
         const method = isEdit ? 'update' : 'create'
         if (isEdit) args.id = req.id
@@ -597,6 +644,30 @@ return {
                 '自动复核',
                 h('span', { className: 'hint' }, autoReview ? '执行完成后启动复核 agent，再进入待验收。' : '执行完成后直接进入待验收，不启动复核 agent。'),
               ),
+            ),
+          ),
+          h('div', { className: 'dtp-field' },
+            h('label', null, '关联历史会话（可选）'),
+            h('div', { style: { display: 'flex', gap: 8, marginBottom: 7 } },
+              h('button', { className: 'dtp-btn small', onClick: loadSessionCandidates, disabled: sessionLoading }, sessionLoading ? '扫描中…' : '扫描相关会话'),
+              h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-label-secondary, #9297a5)', alignSelf: 'center' } }, selectedSessionIds.length ? '已选 ' + selectedSessionIds.length + ' 条' : '未选择'),
+            ),
+            h('div', { className: 'dtp-session-list dtp-scroll' },
+              sessionCandidates.length === 0
+                ? h('div', { className: 'dtp-empty', style: { padding: '8px 0' } }, sessionLoading ? '正在扫描…' : '暂无候选会话')
+                : sessionCandidates.map((s) =>
+                    h('label', { className: 'dtp-session-option', key: s.sessionId },
+                      h('input', {
+                        type: 'checkbox',
+                        checked: selectedSessionIds.includes(s.sessionId),
+                        onChange: () => toggleSession(s.sessionId),
+                      }),
+                      h('span', { className: 'main' },
+                        h('span', { className: 'sid', title: s.sessionId }, (s.title ? s.title + ' · ' : '') + s.sessionId),
+                        h('span', { className: 'snip' }, s.snippet || s.cwd || '（无摘要）'),
+                      ),
+                    ),
+                  ),
             ),
           ),
           h('div', { className: 'dtp-modal-actions' },

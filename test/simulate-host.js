@@ -27,8 +27,32 @@ const hostMod = await import(path.join(repoRoot, 'lib', 'index.js'))
 const registeredTools = [] // 记录 ctx.tools.register 收到的工具定义
 const rpcRoute = {}        // webServer.register 捕获的 RPC 路由
 let promptSection = null   // systemPrompt.section 捕获的回调
+const sessionSearchRequests = []
 
 const mockSessionQuery = {
+  searchSessions: async (request) => {
+    sessionSearchRequests.push(request)
+    return {
+      items: [{
+        header: {
+          id: 'related-session-1',
+          cwd: '/workspace/demo/dsh-task-panel',
+          parentSession: 'root-session',
+          createdAt: Date.now() - 10000,
+        },
+        live: false,
+        persisted: true,
+        bestMatch: {
+          sessionId: 'related-session-1',
+          seq: 2,
+          type: 'assistant/message',
+          time: Date.now() - 9000,
+          surface: 'current',
+          snippet: '历史会话摘要：之前实现过 demo.txt 创建和验证。',
+        },
+      }],
+    }
+  },
   readSession: async () => ({
     session: { id: 's1' },
     events: [
@@ -219,6 +243,8 @@ async function main() {
   console.log('\n[1] create →', a.id, '| stage =', a.stage, '| 要素 =', a.elements.map((e) => e.category).join(','), '| 验收 =', a.acceptanceCriteria.length)
   assert(a.stage === 'backlog', 'create 后应在 backlog')
   assert(a.autoReview === true, '新建需求默认应开启自动复核')
+  assert(a.contextAnchors.length === 1 && a.contextAnchors[0].sessionId === 'related-session-1', '创建需求应自动扫描并关联相关历史会话')
+  assert(sessionSearchRequests.length >= 1 && sessionSearchRequests[0].query.includes('创建测试文件'), '应按需求标题/描述调用 searchSessions')
   assert(a.elements.length >= 1 && a.acceptanceCriteria.length >= 1, '应自动拆解要素与验收')
 
   // 1b. 持久化：每次写盘必须用新解析的 session 化策略（根 agent cwd = /workspace/demo），
@@ -255,6 +281,8 @@ async function main() {
     '面板父 agent cwd 不应拼成 /workspace/demo/dsh-task-panel/dsh-task-panel')
   assert(startedReqs[0].prompt[0].text.includes('工作目录（请在此目录内完成所有文件操作，先 cd 到该目录）：/workspace/demo/dsh-task-panel'),
     '执行提示词应使用规范化后的工作目录')
+  assert(startedReqs[0].prompt[0].text.includes('关联历史会话') && startedReqs[0].prompt[0].text.includes('related-session-1') && startedReqs[0].prompt[0].text.includes('历史会话摘要'),
+    '执行提示词应注入关联历史会话摘要与 sessionId')
 
   // 5. 实时进度：executing 时 progress RPC 返回会话 id / 父会话 id / 最近对话
   const prog = await rpc('progress', {})
@@ -318,6 +346,12 @@ async function main() {
   assert(noReviewView.stage === 'accepting', '关闭自动复核时执行完成应直接进入 accepting')
   assert(noReviewView.reviews.length === 0, '关闭自动复核时不得记录 review')
   assert(pendingRuns.length === 0, '关闭自动复核时不得启动复核子 agent')
+
+  // 8d. 手动勾选关联会话：显式传入时使用用户选择，不再覆盖为自动扫描结果
+  const manualAnchor = { sessionId: 'manual-session-9', title: '用户勾选会话', snippet: '人工选择的旧会话片段', cwd: '/workspace/demo' }
+  const manual = await rpc('create', { title: '手动关联会话测试', description: '应保留显式选择', contextAnchors: [manualAnchor] })
+  assert(manual.contextAnchors.length === 1 && manual.contextAnchors[0].sessionId === 'manual-session-9', '显式勾选的关联会话应被保留')
+  await rpc('remove', { id: manual.id })
 
   // 9. 错误停止：不得伪装成“执行完成”，也不得继续启动自动复核
   const errTask = await rpc('create', { title: '错误停止测试', description: '模拟子 agent stopReason=error' })
