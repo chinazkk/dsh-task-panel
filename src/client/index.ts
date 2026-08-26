@@ -75,65 +75,67 @@ return {
     }
 
     styles.insert(`
-      .dtp-root { --dtp-accent: #9db7df; --dtp-accent-soft: rgba(157,183,223,.22); --dtp-glass: rgba(255,255,255,.09); --dtp-glass-strong: rgba(255,255,255,.14); --dtp-hairline: rgba(255,255,255,.18); --dtp-shadow: 0 18px 46px rgba(0,0,0,.30); --dtp-soft-shadow: 0 8px 24px rgba(0,0,0,.20); display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; color: var(--dsw-alias-label-primary, #f5f7fb); background: radial-gradient(circle at 50% -18%, rgba(157,183,223,.20), transparent 34%), linear-gradient(145deg, #0b0f16 0%, #151b25 45%, #0b1018 100%); }
-      .dtp-header { flex: 0 0 auto; display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-bottom: 1px solid rgba(255,255,255,.12); background: linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.06)); backdrop-filter: blur(28px) saturate(160%); -webkit-backdrop-filter: blur(28px) saturate(160%); box-shadow: 0 1px 0 rgba(255,255,255,.10) inset; }
+      .dtp-root { --dtp-accent: #a9b8cc; --dtp-accent-soft: rgba(169,184,204,.18); --dtp-glass: rgba(255,255,255,.075); --dtp-glass-strong: rgba(255,255,255,.115); --dtp-hairline: rgba(255,255,255,.14); --dtp-text: rgba(248,250,252,.96); --dtp-muted: rgba(203,213,225,.68); --dtp-faint: rgba(148,163,184,.48); --dtp-ok: #b8c9c1; --dtp-warn: #cbc1aa; --dtp-danger: #c9aeb2; --dtp-shadow: 0 18px 48px rgba(0,0,0,.28); --dtp-soft-shadow: 0 10px 30px rgba(0,0,0,.18); position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; color: var(--dtp-text); background: linear-gradient(180deg, rgba(255,255,255,.035), transparent 18%), radial-gradient(circle at 52% -26%, rgba(169,184,204,.18), transparent 32%), linear-gradient(135deg, #090d13 0%, #111821 48%, #090e14 100%); }
+      .dtp-root::before { content: ''; position: absolute; inset: 0; pointer-events: none; background-image: linear-gradient(rgba(255,255,255,.026) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.024) 1px, transparent 1px); background-size: 32px 32px; mask-image: linear-gradient(180deg, rgba(0,0,0,.42), transparent 70%); }
+      .dtp-header { position: relative; flex: 0 0 auto; display: flex; align-items: center; gap: 14px; padding: 13px 18px; border-bottom: 1px solid rgba(255,255,255,.105); background: linear-gradient(180deg, rgba(255,255,255,.105), rgba(255,255,255,.052)); backdrop-filter: blur(30px) saturate(135%); -webkit-backdrop-filter: blur(30px) saturate(135%); box-shadow: 0 1px 0 rgba(255,255,255,.09) inset; z-index: 1; }
       .dtp-title { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
-      .dtp-logo { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 17px; color: #f8fafc; background: linear-gradient(145deg, rgba(255,255,255,.30), rgba(255,255,255,.08)), rgba(157,183,223,.16); border: 1px solid rgba(255,255,255,.28); box-shadow: 0 12px 28px rgba(0,0,0,.22), 0 1px 0 rgba(255,255,255,.42) inset; flex: 0 0 auto; }
-      .dtp-title h1 { font-size: 15px; margin: 0; font-weight: 750; letter-spacing: 0; color: var(--dsw-alias-label-primary, #f8fafc); }
-      .dtp-title .sub { font-size: 11px; color: rgba(226,232,240,.72); margin-top: 2px; }
+      .dtp-logo { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 16px; color: #f8fafc; background: linear-gradient(145deg, rgba(255,255,255,.22), rgba(255,255,255,.055)), rgba(169,184,204,.12); border: 1px solid rgba(255,255,255,.22); box-shadow: 0 10px 24px rgba(0,0,0,.20), 0 1px 0 rgba(255,255,255,.34) inset; flex: 0 0 auto; }
+      .dtp-title h1 { font-size: 15px; margin: 0; font-weight: 760; letter-spacing: 0; color: var(--dtp-text); }
+      .dtp-title .sub { font-size: 11px; color: var(--dtp-muted); margin-top: 2px; }
       .dtp-header-stats { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; margin-right: 2px; }
-      .dtp-stat { display: inline-flex; align-items: center; gap: 5px; min-height: 24px; padding: 0 9px; border-radius: 999px; font-size: 11px; font-weight: 650; color: rgba(248,250,252,.86); background: rgba(255,255,255,.09); border: 1px solid rgba(255,255,255,.16); box-shadow: 0 1px 0 rgba(255,255,255,.12) inset; white-space: nowrap; }
-      .dtp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 30px; border-radius: 9px; padding: 6px 13px; font-size: 12px; font-weight: 650; border: 1px solid rgba(255,255,255,.18); background: linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.08)); color: #f8fafc; cursor: pointer; transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease, background .16s ease, opacity .16s ease; box-shadow: 0 1px 0 rgba(255,255,255,.18) inset, 0 8px 18px rgba(0,0,0,.18); backdrop-filter: blur(18px) saturate(160%); -webkit-backdrop-filter: blur(18px) saturate(160%); }
-      .dtp-btn:hover:not(:disabled) { border-color: rgba(255,255,255,.34); background: linear-gradient(180deg, rgba(255,255,255,.25), rgba(255,255,255,.12)); transform: translateY(-1px); box-shadow: 0 1px 0 rgba(255,255,255,.24) inset, 0 12px 24px rgba(0,0,0,.24); }
+      .dtp-stat { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; padding: 0 9px; border-radius: 8px; font-size: 11px; font-weight: 650; color: rgba(248,250,252,.84); background: rgba(255,255,255,.065); border: 1px solid rgba(255,255,255,.115); box-shadow: 0 1px 0 rgba(255,255,255,.10) inset; white-space: nowrap; }
+      .dtp-stat::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: rgba(169,184,204,.72); }
+      .dtp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 30px; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 650; border: 1px solid rgba(255,255,255,.14); background: linear-gradient(180deg, rgba(255,255,255,.125), rgba(255,255,255,.055)); color: rgba(248,250,252,.92); cursor: pointer; transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease, background .16s ease, opacity .16s ease; box-shadow: 0 1px 0 rgba(255,255,255,.13) inset, 0 8px 18px rgba(0,0,0,.16); backdrop-filter: blur(18px) saturate(135%); -webkit-backdrop-filter: blur(18px) saturate(135%); }
+      .dtp-btn:hover:not(:disabled) { border-color: rgba(255,255,255,.26); background: linear-gradient(180deg, rgba(255,255,255,.17), rgba(255,255,255,.075)); transform: translateY(-1px); box-shadow: 0 1px 0 rgba(255,255,255,.18) inset, 0 12px 24px rgba(0,0,0,.22); }
       .dtp-btn:active:not(:disabled) { transform: translateY(0) scale(.98); }
       .dtp-btn:disabled { cursor: not-allowed; opacity: .48; box-shadow: none; }
-      .dtp-btn.primary { background: linear-gradient(180deg, #b8c8df, #6f87aa); border-color: rgba(219,234,254,.48); color: #07111f; box-shadow: 0 1px 0 rgba(255,255,255,.42) inset, 0 12px 26px rgba(50, 67, 92, .34); }
+      .dtp-btn.primary { background: linear-gradient(180deg, #d4dce8, #8fa0b8); border-color: rgba(226,232,240,.46); color: #07111f; box-shadow: 0 1px 0 rgba(255,255,255,.42) inset, 0 12px 26px rgba(61,76,98,.30); }
       .dtp-btn.primary:hover:not(:disabled) { filter: brightness(1.06); }
-      .dtp-btn.ok { background: linear-gradient(180deg, #a9c8bb, #678d7f); border-color: rgba(209,250,229,.38); color: #07140f; box-shadow: 0 1px 0 rgba(255,255,255,.30) inset, 0 12px 22px rgba(35, 75, 60, .22); }
+      .dtp-btn.ok { background: linear-gradient(180deg, #c7d2cc, #7f9189); border-color: rgba(226,232,240,.34); color: #07140f; box-shadow: 0 1px 0 rgba(255,255,255,.30) inset, 0 12px 22px rgba(43,61,55,.20); }
       .dtp-btn.ok:hover:not(:disabled) { filter: brightness(1.06); }
-      .dtp-btn.danger { background: linear-gradient(180deg, #c59ba1, #8b515c); border-color: rgba(254,205,211,.34); color: #fff; box-shadow: 0 1px 0 rgba(255,255,255,.26) inset, 0 12px 22px rgba(100, 40, 52, .24); }
+      .dtp-btn.danger { background: linear-gradient(180deg, #c8b2b5, #8b646a); border-color: rgba(226,232,240,.24); color: #fff; box-shadow: 0 1px 0 rgba(255,255,255,.24) inset, 0 12px 22px rgba(77,42,48,.22); }
       .dtp-btn.danger:hover:not(:disabled) { filter: brightness(1.06); }
       .dtp-btn.ghost { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.12); color: #dfe7f5; box-shadow: none; }
       .dtp-btn.ghost:hover:not(:disabled) { background: rgba(255,255,255,.10); border-color: rgba(255,255,255,.24); }
       .dtp-btn.small { min-height: 25px; padding: 3px 10px; font-size: 11px; border-radius: 8px; }
-      .dtp-board { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(7, minmax(170px, 1fr)); gap: 12px; padding: 16px 18px 18px; overflow: auto; }
-      .dtp-col { position: relative; background: linear-gradient(180deg, rgba(255,255,255,.13), rgba(255,255,255,.06)); border: 1px solid rgba(255,255,255,.16); border-radius: 14px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; box-shadow: var(--dtp-soft-shadow), 0 1px 0 rgba(255,255,255,.12) inset; backdrop-filter: blur(24px) saturate(150%); -webkit-backdrop-filter: blur(24px) saturate(150%); }
-      .dtp-col::before { content: ''; position: absolute; inset: 0 0 auto; height: 1px; background: linear-gradient(90deg, transparent, rgba(226,232,240,.55), transparent); opacity: .86; pointer-events: none; }
-      .dtp-col-head { position: sticky; top: 0; z-index: 2; padding: 12px 12px 9px; display: flex; align-items: center; gap: 8px; background: linear-gradient(180deg, rgba(15,23,42,.54), rgba(15,23,42,.18)); backdrop-filter: blur(16px) saturate(150%); -webkit-backdrop-filter: blur(16px) saturate(150%); }
-      .dtp-dot { width: 7px; height: 7px; border-radius: 50%; box-shadow: 0 0 10px rgba(226,232,240,.18); flex: 0 0 auto; opacity: .72; }
+      .dtp-board { position: relative; z-index: 1; flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(7, minmax(172px, 1fr)); gap: 10px; padding: 14px 16px 16px; overflow: auto; }
+      .dtp-col { position: relative; background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.045)); border: 1px solid rgba(255,255,255,.13); border-radius: 12px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; box-shadow: var(--dtp-soft-shadow), 0 1px 0 rgba(255,255,255,.10) inset; backdrop-filter: blur(24px) saturate(130%); -webkit-backdrop-filter: blur(24px) saturate(130%); }
+      .dtp-col::before { content: ''; position: absolute; inset: 0 0 auto; height: 2px; background: linear-gradient(90deg, transparent, var(--dtp-accent), transparent); opacity: .42; pointer-events: none; }
+      .dtp-col-head { position: sticky; top: 0; z-index: 2; padding: 11px 11px 8px; display: flex; align-items: center; gap: 8px; background: linear-gradient(180deg, rgba(12,18,27,.68), rgba(12,18,27,.28)); backdrop-filter: blur(18px) saturate(130%); -webkit-backdrop-filter: blur(18px) saturate(130%); border-bottom: 1px solid rgba(255,255,255,.07); }
+      .dtp-dot { width: 6px; height: 6px; border-radius: 50%; box-shadow: 0 0 10px rgba(226,232,240,.12); flex: 0 0 auto; opacity: .68; }
       .dtp-col-head .name { font-size: 12px; font-weight: 720; color: rgba(248,250,252,.93); flex: 1; letter-spacing: 0; }
-      .dtp-count { font-size: 11px; font-weight: 700; padding: 1px 9px; border-radius: 999px; background: rgba(255,255,255,.10); color: rgba(226,232,240,.88); border: 1px solid rgba(255,255,255,.14); }
-      .dtp-col-body { flex: 1; min-height: 0; padding: 5px 8px 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
-      .dtp-card { background: linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,.08)); border: 1px solid rgba(255,255,255,.15); border-radius: 12px; padding: 10px 12px; transition: border-color .16s ease, transform .16s ease, box-shadow .16s ease, background .16s ease; box-shadow: 0 1px 0 rgba(255,255,255,.12) inset, 0 8px 18px rgba(0,0,0,.16); backdrop-filter: blur(16px) saturate(150%); -webkit-backdrop-filter: blur(16px) saturate(150%); }
-      .dtp-card:hover { border-color: rgba(255,255,255,.30); transform: translateY(-2px); box-shadow: 0 1px 0 rgba(255,255,255,.18) inset, 0 16px 30px rgba(0,0,0,.24); background: linear-gradient(180deg, rgba(255,255,255,.20), rgba(255,255,255,.10)); }
+      .dtp-count { font-size: 11px; font-weight: 720; padding: 1px 8px; border-radius: 8px; background: rgba(255,255,255,.075); color: rgba(226,232,240,.86); border: 1px solid rgba(255,255,255,.10); font-variant-numeric: tabular-nums; }
+      .dtp-col-body { flex: 1; min-height: 0; padding: 6px 7px 9px; overflow-y: auto; display: flex; flex-direction: column; gap: 7px; }
+      .dtp-card { background: linear-gradient(180deg, rgba(255,255,255,.115), rgba(255,255,255,.058)); border: 1px solid rgba(255,255,255,.12); border-radius: 10px; padding: 9px 10px; transition: border-color .16s ease, transform .16s ease, box-shadow .16s ease, background .16s ease; box-shadow: 0 1px 0 rgba(255,255,255,.10) inset, 0 7px 16px rgba(0,0,0,.14); backdrop-filter: blur(16px) saturate(130%); -webkit-backdrop-filter: blur(16px) saturate(130%); }
+      .dtp-card:hover { border-color: rgba(255,255,255,.24); transform: translateY(-1px); box-shadow: 0 1px 0 rgba(255,255,255,.15) inset, 0 14px 28px rgba(0,0,0,.22); background: linear-gradient(180deg, rgba(255,255,255,.145), rgba(255,255,255,.072)); }
       .dtp-card-title { font-weight: 690; font-size: 12.5px; color: rgba(248,250,252,.96); margin-bottom: 6px; word-break: break-word; line-height: 1.42; }
       .dtp-card-meta { color: rgba(203,213,225,.74); font-size: 10.5px; margin-bottom: 8px; display: flex; flex-wrap: wrap; gap: 4px 7px; align-items: center; }
-      .dtp-card-meta > span { padding: 1px 6px; border-radius: 999px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.08); }
-      .dtp-pri { display: inline-flex; align-items: center; gap: 5px; border-radius: 99px; padding: 1px 9px; font-size: 10px; font-weight: 700; letter-spacing: 0; border: 1px solid rgba(255,255,255,.12); box-shadow: 0 1px 0 rgba(255,255,255,.10) inset; }
+      .dtp-card-meta > span { padding: 1px 6px; border-radius: 7px; background: rgba(255,255,255,.045); border: 1px solid rgba(255,255,255,.07); }
+      .dtp-pri { display: inline-flex; align-items: center; gap: 5px; border-radius: 7px; padding: 1px 8px; font-size: 10px; font-weight: 720; letter-spacing: 0; border: 1px solid rgba(255,255,255,.10); box-shadow: 0 1px 0 rgba(255,255,255,.08) inset; text-transform: uppercase; }
       .dtp-pri::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
-      .dtp-pri-critical { background: rgba(197, 155, 161, .18); color: #ead5d8; }
-      .dtp-pri-high { background: rgba(196, 181, 143, .16); color: #e9dfc2; }
-      .dtp-pri-medium { background: rgba(157, 183, 223, .17); color: #dbe7f8; }
+      .dtp-pri-critical { background: rgba(201, 174, 178, .15); color: rgba(239,218,221,.92); }
+      .dtp-pri-high { background: rgba(203, 193, 170, .13); color: rgba(236,230,213,.92); }
+      .dtp-pri-medium { background: rgba(169, 184, 204, .14); color: rgba(224,232,244,.94); }
       .dtp-pri-low { background: rgba(148, 163, 184, .14); color: #cbd5e1; }
-      .dtp-deliverable { display: flex; gap: 7px; align-items: flex-start; margin: 2px 0 8px; padding: 8px 10px; border-radius: 10px; background: rgba(169, 200, 187, .11); border: 1px solid rgba(209, 250, 229, .20); color: #d7eee4; font-size: 11px; line-height: 1.5; word-break: break-word; box-shadow: 0 1px 0 rgba(255,255,255,.10) inset; }
+      .dtp-deliverable { display: flex; gap: 7px; align-items: flex-start; margin: 2px 0 8px; padding: 8px 9px; border-radius: 9px; background: rgba(184, 201, 193, .095); border: 1px solid rgba(226,232,240,.13); color: rgba(224,238,232,.92); font-size: 11px; line-height: 1.5; word-break: break-word; box-shadow: 0 1px 0 rgba(255,255,255,.08) inset; }
       .dtp-deliverable .lab { font-weight: 700; flex: 0 0 auto; }
       .dtp-deliverable-collapsed { cursor: pointer; align-items: center; opacity: .90; transition: opacity .15s, border-color .15s, background .15s; }
       .dtp-deliverable-collapsed:hover { opacity: 1; border-color: rgba(209, 250, 229, .34); background: rgba(169, 200, 187, .16); }
       .dtp-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-      .dtp-status-line { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; flex-basis: 100%; padding: 5px 8px; border-radius: 9px; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.10); }
-      .dtp-spin { display: inline-block; width: 11px; height: 11px; border: 2px solid #c4b58f; border-top-color: transparent; border-radius: 50%; animation: dtp-spin .8s linear infinite; vertical-align: middle; margin-right: 6px; }
+      .dtp-status-line { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; flex-basis: 100%; padding: 5px 8px; border-radius: 8px; background: rgba(255,255,255,.055); border: 1px solid rgba(255,255,255,.085); color: rgba(226,232,240,.82); }
+      .dtp-spin { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--dtp-warn); border-top-color: transparent; border-radius: 50%; animation: dtp-spin .8s linear infinite; vertical-align: middle; margin-right: 6px; }
       @keyframes dtp-spin { to { transform: rotate(360deg); } }
-      .dtp-progress { margin: 4px 0 8px; padding: 8px 9px; border-radius: 10px; background: rgba(196, 181, 143, .10); border: 1px solid rgba(196, 181, 143, .22); font-size: 11px; color: rgba(226,232,240,.86); line-height: 1.5; max-height: 102px; overflow: hidden; box-shadow: 0 1px 0 rgba(255,255,255,.08) inset; }
+      .dtp-progress { margin: 4px 0 8px; padding: 8px 9px; border-radius: 9px; background: rgba(203, 193, 170, .082); border: 1px solid rgba(226,232,240,.12); font-size: 11px; color: rgba(226,232,240,.84); line-height: 1.5; max-height: 102px; overflow: hidden; box-shadow: 0 1px 0 rgba(255,255,255,.07) inset; }
       .dtp-progress .prow { display: flex; gap: 6px; align-items: baseline; margin-bottom: 2px; }
-      .dtp-progress .pwho { flex: 0 0 auto; font-weight: 700; color: #e9dfc2; font-size: 10px; }
+      .dtp-progress .pwho { flex: 0 0 auto; font-weight: 700; color: rgba(236,230,213,.92); font-size: 10px; }
       .dtp-progress .ptxt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .dtp-progress .pmeta { font-size: 10px; color: var(--dsw-alias-label-secondary, #8b8f9c); margin-bottom: 4px; }
       .dtp-progress.jumpable { cursor: pointer; transition: border-color .15s, background .15s, transform .15s; }
-      .dtp-progress.jumpable:hover { border-color: rgba(196, 181, 143, .44); background: rgba(196, 181, 143, .15); transform: translateY(-1px); }
-      .dtp-progress.jumpable::after { content: '↗ 查看进度（进入会话）'; display: block; margin-top: 4px; font-size: 10px; font-weight: 700; color: #e9dfc2; }
+      .dtp-progress.jumpable:hover { border-color: rgba(226,232,240,.22); background: rgba(203, 193, 170, .12); transform: translateY(-1px); }
+      .dtp-progress.jumpable::after { content: '查看进度 / 进入会话'; display: block; margin-top: 4px; font-size: 10px; font-weight: 700; color: rgba(236,230,213,.90); }
       .dtp-review { display: flex; gap: 7px; align-items: flex-start; margin: 2px 0 8px; padding: 8px 10px; border-radius: 10px; font-size: 11px; line-height: 1.5; word-break: break-word; box-shadow: 0 1px 0 rgba(255,255,255,.08) inset; }
-      .dtp-review.ok { background: rgba(169, 200, 187, .11); border: 1px solid rgba(209, 250, 229, .20); color: #d7eee4; }
-      .dtp-review.bad { background: rgba(197, 155, 161, .12); border: 1px solid rgba(254, 205, 211, .20); color: #ead5d8; }
+      .dtp-review.ok { background: rgba(184, 201, 193, .095); border: 1px solid rgba(226,232,240,.13); color: rgba(224,238,232,.92); }
+      .dtp-review.bad { background: rgba(201, 174, 178, .11); border: 1px solid rgba(226,232,240,.13); color: rgba(239,218,221,.92); }
       .dtp-review .lab { font-weight: 700; flex: 0 0 auto; }
       .dtp-session-list { display: flex; flex-direction: column; gap: 6px; max-height: 150px; overflow: auto; }
       .dtp-session-option { display: flex; gap: 8px; align-items: flex-start; padding: 8px 9px; border: 1px solid rgba(255,255,255,.14); border-radius: 10px; background: rgba(255,255,255,.07); cursor: pointer; transition: background .15s, border-color .15s; }
@@ -142,20 +144,20 @@ return {
       .dtp-session-option .main { flex: 1; min-width: 0; }
       .dtp-session-option .sid { color: rgba(248,250,252,.94); font-size: 11px; font-weight: 680; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .dtp-session-option .snip { color: rgba(203,213,225,.72); font-size: 10.5px; line-height: 1.4; margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-      .dtp-pulse { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #c4b58f; margin-right: 6px; animation: dtp-pulse 1.2s ease-in-out infinite; }
+      .dtp-pulse { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--dtp-warn); margin-right: 6px; animation: dtp-pulse 1.2s ease-in-out infinite; }
       @keyframes dtp-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.8); } }
-      .dtp-badge { font-size: 11px; color: #d7eee4; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: rgba(169,200,187,.11); border: 1px solid rgba(209,250,229,.20); }
+      .dtp-badge { font-size: 11px; color: rgba(224,238,232,.92); font-weight: 700; padding: 2px 8px; border-radius: 7px; background: rgba(184,201,193,.10); border: 1px solid rgba(226,232,240,.13); }
       .dtp-empty { color: rgba(203,213,225,.58); font-size: 11px; text-align: center; padding: 20px 10px; border-radius: 12px; background: rgba(255,255,255,.035); border: 1px dashed rgba(255,255,255,.12); }
-      .dtp-modal-backdrop { position: fixed; inset: 0; background: rgba(2,6,23,.56); backdrop-filter: blur(20px) saturate(150%); -webkit-backdrop-filter: blur(20px) saturate(150%); display: flex; align-items: center; justify-content: center; z-index: 10000; padding: 18px; }
-      .dtp-modal { background: linear-gradient(180deg, rgba(30,41,59,.82), rgba(15,23,42,.74)); border: 1px solid rgba(255,255,255,.18); border-radius: 18px; padding: 18px 20px; width: 540px; max-width: 92vw; max-height: 84vh; overflow: auto; box-shadow: 0 34px 90px rgba(0,0,0,.55), 0 1px 0 rgba(255,255,255,.18) inset; backdrop-filter: blur(30px) saturate(160%); -webkit-backdrop-filter: blur(30px) saturate(160%); }
+      .dtp-modal-backdrop { position: fixed; inset: 0; background: rgba(3,7,13,.58); backdrop-filter: blur(22px) saturate(125%); -webkit-backdrop-filter: blur(22px) saturate(125%); display: flex; align-items: center; justify-content: center; z-index: 10000; padding: 18px; }
+      .dtp-modal { background: linear-gradient(180deg, rgba(28,36,48,.84), rgba(11,17,25,.78)); border: 1px solid rgba(255,255,255,.15); border-radius: 14px; padding: 18px 20px; width: 540px; max-width: 92vw; max-height: 84vh; overflow: auto; box-shadow: 0 34px 90px rgba(0,0,0,.52), 0 1px 0 rgba(255,255,255,.14) inset; backdrop-filter: blur(30px) saturate(130%); -webkit-backdrop-filter: blur(30px) saturate(130%); }
       .dtp-modal h2 { font-size: 14px; margin: 0 0 14px; color: rgba(248,250,252,.96); font-weight: 750; letter-spacing: 0; }
       .dtp-field { margin-bottom: 12px; }
       .dtp-field label { display: block; font-size: 11px; color: rgba(203,213,225,.74); margin-bottom: 5px; font-weight: 650; }
-      .dtp-field input, .dtp-field select, .dtp-field textarea { width: 100%; box-sizing: border-box; background: rgba(255,255,255,.08); color: rgba(248,250,252,.96); border: 1px solid rgba(255,255,255,.14); border-radius: 10px; padding: 8px 10px; font-size: 12px; outline: none; transition: border-color .15s, background .15s, box-shadow .15s; box-shadow: 0 1px 0 rgba(255,255,255,.08) inset; }
-      .dtp-field input:focus, .dtp-field select:focus, .dtp-field textarea:focus { border-color: rgba(157,183,223,.66); background: rgba(255,255,255,.12); box-shadow: 0 0 0 3px rgba(157,183,223,.16), 0 1px 0 rgba(255,255,255,.10) inset; }
+      .dtp-field input, .dtp-field select, .dtp-field textarea { width: 100%; box-sizing: border-box; background: rgba(255,255,255,.065); color: rgba(248,250,252,.96); border: 1px solid rgba(255,255,255,.12); border-radius: 9px; padding: 8px 10px; font-size: 12px; outline: none; transition: border-color .15s, background .15s, box-shadow .15s; box-shadow: 0 1px 0 rgba(255,255,255,.07) inset; }
+      .dtp-field input:focus, .dtp-field select:focus, .dtp-field textarea:focus { border-color: rgba(169,184,204,.58); background: rgba(255,255,255,.10); box-shadow: 0 0 0 3px rgba(169,184,204,.14), 0 1px 0 rgba(255,255,255,.09) inset; }
       .dtp-field input::placeholder, .dtp-field textarea::placeholder { color: rgba(203,213,225,.44); }
-      .dtp-check { display: flex; align-items: flex-start; gap: 9px; padding: 10px 11px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); border-radius: 11px; }
-      .dtp-check input { width: 16px; height: 16px; margin: 1px 0 0; flex: 0 0 auto; accent-color: #9db7df; }
+      .dtp-check { display: flex; align-items: flex-start; gap: 9px; padding: 10px 11px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); border-radius: 9px; }
+      .dtp-check input { width: 16px; height: 16px; margin: 1px 0 0; flex: 0 0 auto; accent-color: #a9b8cc; }
       .dtp-check .txt { flex: 1; min-width: 0; color: rgba(248,250,252,.94); font-size: 12px; font-weight: 700; }
       .dtp-check .hint { display: block; margin-top: 2px; color: rgba(203,213,225,.70); font-size: 11px; font-weight: 400; line-height: 1.4; }
       .dtp-workdir-row { display: flex; gap: 6px; }
@@ -163,24 +165,24 @@ return {
       .dtp-workdir-row .dtp-btn { flex: 0 0 auto; }
       .dtp-dirbrowser { display: flex; flex-direction: column; gap: 8px; min-height: 320px; }
       .dtp-dircrumbs { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 11px; }
-      .dtp-dircrumb { cursor: pointer; color: #dbe7f8; padding: 3px 7px; border-radius: 8px; background: rgba(157,183,223,.12); border: 1px solid rgba(157,183,223,.18); }
-      .dtp-dircrumb:hover { background: rgba(157,183,223,.20); }
+      .dtp-dircrumb { cursor: pointer; color: rgba(226,232,240,.90); padding: 3px 7px; border-radius: 7px; background: rgba(169,184,204,.10); border: 1px solid rgba(169,184,204,.16); }
+      .dtp-dircrumb:hover { background: rgba(169,184,204,.16); }
       .dtp-dircrumb.last { color: rgba(248,250,252,.94); cursor: default; background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.10); }
       .dtp-dirsep { color: rgba(203,213,225,.60); }
-      .dtp-direntries { flex: 1; min-height: 0; overflow-y: auto; border: 1px solid rgba(255,255,255,.14); border-radius: 12px; background: rgba(255,255,255,.07); }
+      .dtp-direntries { flex: 1; min-height: 0; overflow-y: auto; border: 1px solid rgba(255,255,255,.12); border-radius: 10px; background: rgba(255,255,255,.055); }
       .dtp-direntry { display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; font-size: 12px; border-bottom: 1px solid rgba(255,255,255,.08); color: rgba(248,250,252,.94); transition: background .15s; }
-      .dtp-direntry:hover { background: rgba(157,183,223,.12); }
+      .dtp-direntry:hover { background: rgba(169,184,204,.10); }
       .dtp-direntry .ic { flex: 0 0 auto; font-size: 13px; }
       .dtp-dirselect { margin-left: auto; flex: 0 0 auto; }
       .dtp-dirpath { font-size: 11px; color: rgba(203,213,225,.76); word-break: break-word; padding: 7px 10px; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.10); border-radius: 10px; }
       .dtp-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
       .dtp-transcript { display: flex; flex-direction: column; gap: 8px; }
       .dtp-msg { border-radius: 12px; padding: 10px 12px; font-size: 12px; white-space: pre-wrap; word-break: break-word; line-height: 1.55; border: 1px solid rgba(255,255,255,.12); }
-      .dtp-msg.user { background: rgba(157, 183, 223, .13); border-left: 3px solid rgba(157,183,223,.70); }
+      .dtp-msg.user { background: rgba(169, 184, 204, .12); border-left: 3px solid rgba(169,184,204,.58); }
       .dtp-msg.assistant { background: rgba(255,255,255,.08); border-left: 3px solid rgba(226,232,240,.42); }
       .dtp-msg.tool { background: rgba(148, 163, 184, .12); border-left: 3px solid rgba(148,163,184,.46); color: rgba(203,213,225,.76); font-size: 11px; }
       .dtp-msg .who { font-weight: 750; display: block; margin-bottom: 3px; color: rgba(248,250,252,.94); }
-      .dtp-toast { position: fixed; bottom: 26px; right: 26px; z-index: 10001; background: rgba(15,23,42,.78); color: rgba(248,250,252,.96); border: 1px solid rgba(255,255,255,.18); border-radius: 12px; padding: 10px 15px; font-size: 12px; box-shadow: 0 20px 50px rgba(0,0,0,.42), 0 1px 0 rgba(255,255,255,.12) inset; backdrop-filter: blur(24px) saturate(160%); -webkit-backdrop-filter: blur(24px) saturate(160%); }
+      .dtp-toast { position: fixed; bottom: 26px; right: 26px; z-index: 10001; background: rgba(13,19,28,.82); color: rgba(248,250,252,.96); border: 1px solid rgba(255,255,255,.15); border-radius: 10px; padding: 10px 15px; font-size: 12px; box-shadow: 0 20px 50px rgba(0,0,0,.40), 0 1px 0 rgba(255,255,255,.10) inset; backdrop-filter: blur(24px) saturate(130%); -webkit-backdrop-filter: blur(24px) saturate(130%); }
       .dtp-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
       .dtp-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }
       .dtp-scroll::-webkit-scrollbar-track { background: transparent; }
@@ -267,10 +269,10 @@ return {
       const columns = [
         { stage: 'backlog', title: '需求队列', color: 'rgba(226,232,240,.46)', count: byStage('backlog').length },
         { stage: 'queued', title: '执行队列', color: 'rgba(226,232,240,.46)', count: byStage('queued').length },
-        { stage: 'executing', title: '执行中', color: 'rgba(196,181,143,.58)', count: byStage('executing').length },
+        { stage: 'executing', title: '执行中', color: 'rgba(203,193,170,.54)', count: byStage('executing').length },
         { stage: 'reviewing', title: '自动复核', color: 'rgba(184,196,214,.52)', count: byStage('reviewing').length },
         { stage: 'paused', title: '已暂停', color: 'rgba(148,163,184,.42)', count: byStage('paused').length },
-        { stage: 'accepting', title: '待验收', color: 'rgba(169,200,187,.52)', count: byStage('accepting').length },
+        { stage: 'accepting', title: '待验收', color: 'rgba(184,201,193,.50)', count: byStage('accepting').length },
         { stage: 'accepted', title: '验收完成', color: 'rgba(226,232,240,.46)', count: byStage('accepted').length },
       ]
 
@@ -319,7 +321,7 @@ return {
             h('span', { className: 'dtp-stat' }, '验收 ' + accepting),
             h('span', { className: 'dtp-stat' }, '完成 ' + accepted),
           ),
-          h('button', { className: 'dtp-btn primary', onClick: () => setFormReq({ mode: 'create' }) }, '＋ 新建需求'),
+          h('button', { className: 'dtp-btn primary', onClick: () => setFormReq({ mode: 'create' }) }, '新建需求'),
         ),
         h('div', { className: 'dtp-board dtp-scroll' },
           columns.map((col) => {
@@ -416,13 +418,13 @@ return {
         )
       } else if (stage === 'queued') {
         actions = h('div', { className: 'dtp-actions' },
-          h('button', { className: 'dtp-btn small', onClick: onTop }, '⤒ 置顶'),
+          h('button', { className: 'dtp-btn small', onClick: onTop }, '置顶'),
           h('button', { className: 'dtp-btn small', onClick: onRecall }, '撤回'),
           delBtn,
         )
       } else if (stage === 'executing') {
         actions = h('div', { className: 'dtp-actions' },
-          h('span', { className: 'dtp-status-line', style: { color: '#e9dfc2' } },
+          h('span', { className: 'dtp-status-line' },
             h('span', { className: 'dtp-pulse' }),
             '子 agent 执行中' + (progress && progress.sessionId ? ' · ' + String(progress.sessionId).slice(0, 8) : '') + (progress ? ' · ' + Math.round((progress.elapsedMs || 0) / 1000) + 's' : ''),
           ),
@@ -432,13 +434,13 @@ return {
             disabled: !(progress && progress.sessionId),
             title: progress && progress.sessionId ? '查看进度 = 跳转到对应子代理会话（实时进度）' : '子会话尚未建立',
           }, '查看进度'),
-          h('button', { className: 'dtp-btn small', onClick: onPause }, '⏸ 暂停'),
-          h('button', { className: 'dtp-btn small danger', onClick: onStop }, '⏹ 停止'),
+          h('button', { className: 'dtp-btn small', onClick: onPause }, '暂停'),
+          h('button', { className: 'dtp-btn small danger', onClick: onStop }, '停止'),
         )
       } else if (stage === 'reviewing') {
         actions = h('div', { className: 'dtp-actions' },
-          h('span', { className: 'dtp-status-line', style: { color: '#d9e3f2' } },
-            h('span', { className: 'dtp-pulse', style: { background: '#b8c4d6' } }),
+          h('span', { className: 'dtp-status-line' },
+            h('span', { className: 'dtp-pulse', style: { background: 'var(--dtp-accent)' } }),
             '复核 agent 检查中' + (progress && progress.sessionId ? ' · ' + String(progress.sessionId).slice(0, 8) : '') + (progress ? ' · ' + Math.round((progress.elapsedMs || 0) / 1000) + 's' : ''),
           ),
           h('button', {
@@ -447,24 +449,24 @@ return {
             disabled: !(progress && progress.sessionId),
             title: progress && progress.sessionId ? '查看复核进度 = 跳转到对应子代理会话' : '复核子会话尚未建立',
           }, '查看复核'),
-          h('button', { className: 'dtp-btn small', onClick: onPause }, '⏸ 暂停'),
-          h('button', { className: 'dtp-btn small danger', onClick: onStop }, '⏹ 停止'),
+          h('button', { className: 'dtp-btn small', onClick: onPause }, '暂停'),
+          h('button', { className: 'dtp-btn small danger', onClick: onStop }, '停止'),
         )
       } else if (stage === 'paused') {
         actions = h('div', { className: 'dtp-actions' },
-          h('button', { className: 'dtp-btn small primary', onClick: onResume }, '▶ 恢复'),
+          h('button', { className: 'dtp-btn small primary', onClick: onResume }, '恢复'),
           h('button', { className: 'dtp-btn small danger', onClick: () => { if (confirmDel) { setConfirmDel(false); onDelete() } else setConfirmDel(true) } }, confirmDel ? '确认删除?' : '删除'),
         )
       } else if (stage === 'accepting') {
         actions = h('div', { className: 'dtp-actions' },
           h('button', { className: 'dtp-btn small', onClick: onConv }, '查看对话'),
-          h('button', { className: 'dtp-btn small ok', onClick: onAccept }, '✓ 通过'),
-          h('button', { className: 'dtp-btn small danger', onClick: onRework }, '↻ 返工'),
+          h('button', { className: 'dtp-btn small ok', onClick: onAccept }, '通过'),
+          h('button', { className: 'dtp-btn small danger', onClick: onRework }, '返工'),
         )
       } else if (stage === 'accepted') {
         actions = h('div', { className: 'dtp-actions' },
           h('button', { className: 'dtp-btn small', onClick: onConv }, '查看对话'),
-          h('span', { className: 'dtp-badge' }, '✓ 验收通过'),
+          h('span', { className: 'dtp-badge' }, '验收通过'),
         )
       }
 
@@ -482,7 +484,7 @@ return {
           onClick: jumpable ? onJumpSession : undefined,
         },
           progress.workdir
-            ? h('div', { className: 'pmeta', title: progress.workdir }, '📁 ' + progress.workdir)
+            ? h('div', { className: 'pmeta', title: progress.workdir }, '目录 ' + progress.workdir)
             : null,
           progress.recent.slice(-3).map((m, i) =>
             h('div', { className: 'prow', key: i },
@@ -500,7 +502,7 @@ return {
         const text = (req.reviewVerdict || (passed ? '自动复核通过' : '自动复核发现问题')) +
           (!passed && issues.length ? '；问题：' + issues.slice(0, 3).join('；') : '')
         reviewBlock = h('div', { className: 'dtp-review ' + (passed ? 'ok' : 'bad'), title: '自动复核结论' },
-          h('span', { className: 'lab' }, passed ? '复核✓' : '复核!'),
+          h('span', { className: 'lab' }, passed ? '复核通过' : '复核注意'),
           h('span', null, text),
         )
       }
@@ -541,11 +543,11 @@ return {
           h('span', null, req.id),
           h('span', null, '要素 ' + req.elementCount),
           h('span', null, '验收 ' + req.criterionCount),
-          h('span', { title: req.autoReview === false ? '执行完成后不启动复核 agent' : '执行完成后自动启动复核 agent', style: { color: req.autoReview === false ? '#e9dfc2' : '#d9e3f2' } }, req.autoReview === false ? '免复核' : '自动复核'),
-          req.contextAnchors && req.contextAnchors.length ? h('span', { title: '已关联历史会话', style: { color: '#d7eee4' } }, '会话 ' + req.contextAnchors.length) : null,
-          req.workdir ? h('span', { title: '绑定工作目录', style: { color: 'rgba(203,213,225,.72)', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, '📁 ' + req.workdir) : h('span', { style: { color: '#e9dfc2' } }, '⚠ 未绑定目录'),
-          req.scheduledAt ? h('span', { title: '计划执行时间', style: { color: req.scheduledAt > Date.now() ? '#d9e3f2' : '#d7eee4' } }, '⏱ ' + formatScheduledAt(req.scheduledAt)) : null,
-          req.reworkCount ? h('span', { style: { color: '#e9dfc2' } }, '返工 ' + req.reworkCount) : null,
+          h('span', { title: req.autoReview === false ? '执行完成后不启动复核 agent' : '执行完成后自动启动复核 agent', style: { color: req.autoReview === false ? 'rgba(236,230,213,.92)' : 'rgba(217,227,242,.90)' } }, req.autoReview === false ? '免复核' : '自动复核'),
+          req.contextAnchors && req.contextAnchors.length ? h('span', { title: '已关联历史会话', style: { color: 'rgba(224,238,232,.90)' } }, '会话 ' + req.contextAnchors.length) : null,
+          req.workdir ? h('span', { title: '绑定工作目录', style: { color: 'rgba(203,213,225,.72)', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, '目录 ' + req.workdir) : h('span', { style: { color: 'rgba(236,230,213,.92)' } }, '未绑定目录'),
+          req.scheduledAt ? h('span', { title: '计划执行时间', style: { color: req.scheduledAt > Date.now() ? 'rgba(217,227,242,.90)' : 'rgba(224,238,232,.90)' } }, '定时 ' + formatScheduledAt(req.scheduledAt)) : null,
+          req.reworkCount ? h('span', { style: { color: 'rgba(236,230,213,.92)' } }, '返工 ' + req.reworkCount) : null,
         ),
         progressBlock,
         reviewBlock,
@@ -640,8 +642,8 @@ return {
         h('div', { className: 'dtp-modal', onClick: (e) => e.stopPropagation() },
           h('h2', null, isEdit ? '编辑需求 ' + req.id : '新建需求'),
           !isEdit && !workdir
-            ? h('div', { className: 'dtp-field', style: { background: 'rgba(196,181,143,.12)', border: '1px solid rgba(196,181,143,.30)', borderRadius: 10, padding: '7px 10px', color: '#e9dfc2', fontSize: 11 } },
-                '⚠ 尚未绑定工作目录，子 agent 执行时无法确定落盘位置，请选择或填写「绑定工作目录」。',
+            ? h('div', { className: 'dtp-field', style: { background: 'rgba(203,193,170,.10)', border: '1px solid rgba(226,232,240,.14)', borderRadius: 9, padding: '7px 10px', color: 'rgba(236,230,213,.92)', fontSize: 11 } },
+                '尚未绑定工作目录，子 agent 执行时无法确定落盘位置，请选择或填写「绑定工作目录」。',
               )
             : null,
           h('div', { className: 'dtp-field' },
@@ -662,7 +664,7 @@ return {
             h('label', null, '绑定工作目录 *'),
             h('div', { className: 'dtp-workdir-row' },
               h('input', { value: workdir, onChange: (e) => setWorkdir(e.target.value), placeholder: '如: /path/to/project（子 agent 在此目录执行）' }),
-              h('button', { className: 'dtp-btn', onClick: () => setDirPickerOpen(true) }, '📁 浏览…'),
+              h('button', { className: 'dtp-btn', onClick: () => setDirPickerOpen(true) }, '浏览'),
             ),
           ),
           h('div', { className: 'dtp-field' },
@@ -796,11 +798,11 @@ return {
           h('div', { className: 'dtp-dirbrowser' },
             h('div', { style: { display: 'flex', gap: 8, alignItems: 'center' } },
               mode === 'native'
-                ? h('button', { className: 'dtp-btn primary', onClick: pickNative, disabled: loading }, loading ? '打开选择器…' : '🗔 打开系统目录选择器')
-                : h('button', { className: 'dtp-btn', onClick: () => openDir(initial || undefined), disabled: loading }, '↻ 刷新'),
-              h('button', { className: 'dtp-btn', onClick: () => openDir(undefined) }, '🏠 主目录'),
+                ? h('button', { className: 'dtp-btn primary', onClick: pickNative, disabled: loading }, loading ? '打开选择器…' : '打开系统目录选择器')
+                : h('button', { className: 'dtp-btn', onClick: () => openDir(initial || undefined), disabled: loading }, '刷新'),
+              h('button', { className: 'dtp-btn', onClick: () => openDir(undefined) }, '主目录'),
             ),
-            error ? h('div', { style: { fontSize: 11, color: '#ead5d8', padding: '6px 10px', background: 'rgba(197,155,161,.10)', border: '1px solid rgba(197,155,161,.20)', borderRadius: 10 } }, '⚠ ' + error) : null,
+            error ? h('div', { style: { fontSize: 11, color: 'rgba(239,218,221,.92)', padding: '6px 10px', background: 'rgba(201,174,178,.10)', border: '1px solid rgba(226,232,240,.13)', borderRadius: 9 } }, error) : null,
             mode !== 'native'
               ? h('div', { className: 'dtp-dircrumbs' },
                   (crumbs.length ? crumbs : [{ name: '…', path: undefined }]).map((c, i) => {
@@ -820,7 +822,7 @@ return {
                       ? h('div', { className: 'dtp-empty' }, '（无子目录）')
                       : entries.map((e, i) =>
                           h('div', { className: 'dtp-direntry', key: i, onClick: () => openDir(e.path) },
-                            h('span', { className: 'ic' }, e.hidden ? '📂' : '📁'),
+                            h('span', { className: 'ic' }, e.hidden ? '隐' : '目录'),
                             h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, e.name),
                             h('button', { className: 'dtp-btn small dtp-dirselect', onClick: (ev) => { ev.stopPropagation(); onPick(e.path) } }, '选用'),
                           ),
