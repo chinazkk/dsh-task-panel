@@ -1,6 +1,6 @@
 {
   "name": "dsh-task-panel",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "DSH Web 任务面板插件：把需求、队列、子 agent 执行、自动复核、验收返工和定时执行做成一个可视化闭环。",
   "license": "MIT",
   "type": "module",
