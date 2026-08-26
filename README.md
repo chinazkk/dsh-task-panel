@@ -74,6 +74,21 @@ dsh --profile web --dump-config      # 输出应含 "# == dsh-task-panel" 层
 dsh --profile web
 ```
 
+### 1024 Store 安装状态
+
+1024 Store 的安装命令依赖 npm registry。当前如果 Store 显示 `This plugin has not published an npm package`，表示 `dsh-task-panel` 这个包名还没有发布到 npm，Store 暂时无法自动生成安装命令。发布后，Store 会自动展示类似下面的安装方式：
+
+```bash
+dsh plugin --profile web add dsh-task-panel
+```
+
+发布前请先确认 npm 包里包含运行时代码、截图和说明文档：
+
+```bash
+npm run check
+npm pack --dry-run
+```
+
 详细安装 / 升级 / 移除 / 排障见 [`docs/INSTALL-GUIDE.md`](docs/INSTALL-GUIDE.md)。
 
 ## 面板能力一览

@@ -20,6 +20,8 @@
   "files": [
     "lib",
     "src",
+    "assets",
+    "docs",
     "cordis.patch.yml",
     "tsconfig.json",
     "tsconfig.client.json",
@@ -84,6 +86,9 @@
   ],
   "engines": {
     "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "repository": {
     "type": "git",
