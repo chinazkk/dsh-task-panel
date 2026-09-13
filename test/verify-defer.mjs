@@ -4,7 +4,7 @@
 //         点返工 → 挂起（不闪回待验收）→ state 轮询探测 agent 就绪 → 自动续跑返工轮
 import process from 'node:process'
 
-const LIB = process.env.HOME + '/.dsh/profiles/web/node_modules/dsh-task-panel/lib/index.js'
+const LIB = new URL('../lib/index.js', import.meta.url).href
 const hostMod = await import(LIB)
 
 const rpcRoute = {}

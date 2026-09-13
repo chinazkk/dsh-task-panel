@@ -395,8 +395,7 @@ return {
       return sandboxPolicy.resolve({ mode: 'workspace-write' })
     }
     function resolveDataBaseDir() {
-      // 1) 需求绑定目录（用户持久化目标，如 <绑定目录根>）
-      if (typeof lastWorkdir === 'string' && lastWorkdir.trim()) return normalizePanelWorkdir(lastWorkdir)
+      // 1) 数据位置不再跟随 lastWorkdir（防跨重启状态分叉/历史丢失），固定走 workspaceRoot
       // 2) 根会话项目区 / 部署 workspaceRoot（旧位置，含历史数据）
       try {
         const root = writePolicy && writePolicy.workspaceRoot ? writePolicy.workspaceRoot : (sandboxPolicy ? sandboxPolicy.workspaceRoot : null)
