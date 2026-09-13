@@ -21,7 +21,7 @@
 > dsh-task-panel 是一个社区维护的 DSH 插件，非 DeepSeek 官方产品。
 
 <p align="center">
-  <img src="assets/screenshots/task-panel-board.webp" alt="任务面板七列看板（示例数据）" width="960">
+  <img src="assets/screenshots/task-panel-board.webp" alt="任务面板七列看板（示例数据）" width="1280">
 </p>
 
 > 上图为任务面板看板示例；新版流程为：需求队列 → 执行队列 → 执行中（实时进度预览，可一键直达子代理会话）→ 可选自动复核 → 已暂停 → 待验收（一句话产物 + 可选复核结论）→ 验收完成。
