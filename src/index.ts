@@ -140,6 +140,11 @@ return {
       try { if (exec && exec.signal) captureSignalCtor(exec.signal) } catch (e) { /* noop */ }
       return next()
     })
+    // 无可用 agent 时挂起的队列：任一 agent 就绪（用户开启对话创建根 agent）即续跑派发，
+    // 让返工/派发的需求真正重新执行，而不是被「未挂载子 agent」跳过吞掉。
+    ctx.on('agent/created', () => {
+      maybeResumeAfterAgentAvailable()
+    })
     // 永不中断的信号：子 agent 跑完整轮，不因触发它的某个 step 结束而被取消。
     // 三级兜底，保证执行器初始化永远拿得到信号（不再报「未捕获到 AbortSignal」）：
     //   1) 已捕获的真实 AbortSignal 构造器 → AbortSignal.any([])（永不中止）
@@ -839,6 +844,27 @@ return {
     const userStopped = new Set() // 被用户暂停/停止的需求 id
     const stopTargets = new Map() // 需求 id -> 'paused' | 'backlog'
 
+    // ── 无可用父级 agent 时挂起等待（修复：返工/派发不再被「未挂载子 agent」跳过吞任务）──
+    // roots/list/initiator 均为空（用户尚未开启任何对话）时，不吞任务、不伪造执行：
+    // 需求放回队首保持 queued，等 agent 就绪后自动真正执行。
+    let waitingForAgent = false
+    function deferExecutionForAgent(id) {
+      const req = requirements[id]
+      if (!req) return
+      req.stage = 'queued'
+      if (execQueue.indexOf(id) < 0) execQueue.unshift(id) // 放回队首，保持原排队次序
+      req.updatedAt = Date.now()
+      addEvent(req, 'deferred', '暂无可用 agent 会话，已放回执行队列；开启对话后将自动继续执行')
+      waitingForAgent = true
+      persistState()
+    }
+    function maybeResumeAfterAgentAvailable() {
+      if (!waitingForAgent || busy) return
+      if (!resolveRootAgent()) return
+      waitingForAgent = false
+      void pump()
+    }
+
     // 当前会话的根 agent（作为面板专用 agent 的装配来源与兜底父级）
     function resolveRootAgent() {
       try { const roots = agents.roots(); if (roots && roots.length) return roots[0] } catch (e) { /* noop */ }
@@ -1171,18 +1197,17 @@ return {
       const req = requirements[id]
       busy = true
       persistState()
+      // 先探测父级 agent 可用性，再开始执行：无 agent 时挂起放回队首。
+      // 不进入 try——try 的 finally 会 void pump()，与「放回队列」互相触发形成微任务死循环。
+      const parent = await resolveParent()
+      if (!parent || !subagents) {
+        deferExecutionForAgent(id)
+        busy = false
+        return
+      }
+      const execDir = await resolvePanelExecDir()
       try {
         startExecution(id)
-        // 使用面板专用主 agent 作为执行器父级（继承根 agent 完整装配：模型/工具/prompt 段落），
-        // 拥有独立 session 与工作目录；工作目录通过提示词钉在需求绑定目录/面板目录，避免在别的项目下执行
-        const parent = await resolveParent()
-        const execDir = await resolvePanelExecDir()
-        if (!parent || !subagents) {
-          await completeExecution(id, '未挂载子 agent 执行能力，已跳过真实执行（状态流转到待验收）', { skipReview: true })
-          busy = false
-          void pump()
-          return
-        }
         // 永不中断的信号：优先真实 AbortSignal（agent/pre-step / tools/execute 已捕获），
         // 捕获不到时回退鸭子类型信号——执行器初始化不再因缺 AbortSignal 而失败。
         const signal = makeNeverAbortSignal()
@@ -1419,7 +1444,7 @@ return {
       }
     }
 
-    handle('state', async () => stateView())
+    handle('state', async () => { maybeResumeAfterAgentAvailable(); return stateView() })
     handle('get', async (a) => view(a.id))
     handle('progress', async (a) => {
       // 实时进度：返回所有 executing/reviewing 需求的最新会话 id / 父会话 id / 工作目录 / 最近对话片段
