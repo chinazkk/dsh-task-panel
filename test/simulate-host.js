@@ -384,6 +384,15 @@ async function main() {
   assert(bv.reworkCount === 1, '返工次数应为 1')
   await sleep(30)
   assert(pendingRuns.length === 1, '返工应自动派发第 2 轮子 agent')
+  // 返工上下文注入：第 2 轮提示词应携带上一轮执行情况（而非只有返工原因）
+  const reworkPrompt = startedReqs[startedReqs.length - 1].prompt[0].text
+  console.log('[7b] 返工提示词含上一轮上下文 =', reworkPrompt.includes('上一轮执行情况'))
+  assert(reworkPrompt.includes('── 上一轮执行情况（第 1 轮）──'), '返工提示词应注入上一轮执行情况块')
+  assert(reworkPrompt.includes('demo.txt'), '返工提示词应含上一轮改动文件')
+  assert(reworkPrompt.includes('npm test'), '返工提示词应含上一轮验证命令')
+  assert(reworkPrompt.includes('sessionId=sess-mock-'), '返工提示词应含上一轮原会话引用')
+  assert(reworkPrompt.includes('不要从零重做'), '返工提示词应含迭代指令')
+  assert(!reworkPrompt.includes(LONG_TEST_RESULT), '返工提示词的验证结果应压缩，不得塞入全文')
   await finishExecutionAndReview('B 第2轮')
   const b2 = await rpc('get', { id: b.id })
   console.log('[8] 返工自动重执行 → stage =', b2.stage, '| 执行轮次 =', b2.executions.length, '| 第2轮返工标记 =', b2.executions[1].isRework)
